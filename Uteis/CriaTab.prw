@@ -1,13 +1,4 @@
-#Include "Protheus.ch"
-#Include "tbiconn.ch"
-#INCLUDE "TOTVS.CH"
-#INCLUDE "RESTFUL.CH"
-#INCLUDE "FWMVCDEF.CH"
-#include 'tlpp-core.th'
-#include 'tlpp-rest.th
-#Include "RwMake.ch"
-#INCLUDE "PARMTYPE.CH"
-#Include "Ap5Mail.ch"
+#Include "totvs.ch"
 
 User Function CriaTab()
 
@@ -19,8 +10,6 @@ dbSelectArea("Z3F")
 dbSelectArea("Z3G")
 dbSelectArea("Z3K")
 dbSelectArea("Z3H")
-
-
 dbSelectArea("Z3I")
 dbSelectArea("Z3J")
 dbSelectArea("Z3L")
