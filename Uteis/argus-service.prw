@@ -42,6 +42,7 @@ WSRESTFUL Argus Description "Argus"
 	WSMETHOD GET occurrences Description "Returns occurrences" WSSYNTAX "/occurrences" PATH "/occurrences"
 	WSMETHOD GET contracts Description "Returns contracts" WSSYNTAX "/contracts" PATH "/contracts" 
 	WSMETHOD GET ServiceFormats Description "Returns Service Formats" WSSYNTAX "/serviceformats" PATH "/serviceformats" 
+	WSMETHOD GET efficiency Description "Returns efficiency" WSSYNTAX "/efficiency" PATH "/efficiency" 
 	WSMETHOD PUT user Description "update user" WSSYNTAX "/user" PATH "/user"
 	WSMETHOD PUT occurrence Description "update occurrence" WSSYNTAX "/occurrence" PATH "/occurrence"
 	WSMETHOD PUT sla Description "update sla" WSSYNTAX "/sla" PATH "/sla"
@@ -1256,6 +1257,17 @@ WSMETHOD GET ServiceFormats WSRECEIVE id, page, pageSize, filter WSSERVICE Argus
 	self:SetContentType('application/json')
 
 	oResponse := ArgusController():GetServiceFormats(cId, cPage, cPageSize, cFilter)
+
+	self:setresponse(oResponse)
+
+return .t.
+
+WSMETHOD GET efficiency WSSERVICE Argus
+	local oResponse := JsonObject():New()
+
+	self:SetContentType('application/json')
+
+	oResponse := ArgusController():getEfficiency()
 
 	self:setresponse(oResponse)
 

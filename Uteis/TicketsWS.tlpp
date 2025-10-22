@@ -3191,7 +3191,7 @@ Static Function EnviaEmail(cPara, cAssunto, cMensagem, aAnexos, lMostraLog, lUsa
 
 	oMessage:Clear()
 	oMessage:cFrom := 'reports@3corp.com.br' //cConta
-	oMessage:cTo := cPara+";isaias.gravatal@iccgf.com"
+	oMessage:cTo := cPara //+";isaias.gravatal@iccgf.com"
 	oMessage:cSubject := cAssunto
 	oMessage:cBody := cMensagem
 	oMessage:MsgBodyType("text/html")

@@ -368,8 +368,8 @@ method ApplyActionsInTicket(aActions, cTicketId) class AutomationsModel
                         cHtml := oFile:FullRead()
                         ConOut("HTML lido do arquivo, tamanho: " + Ltrim(Str(Len(cHtml))))
 
-                        cHtml := StrTran(cHtml, '%{{requesterName}}%', cRequesterName)
-                        cHtml := StrTran(cHtml, '%{{ticketId}}%', cTicketId)
+                        cHtml := StrTran(cHtml, '{{requesterName}}', cRequesterName)
+                        cHtml := StrTran(cHtml, '{{ticketId}}', cTicketId)
                         EnviaEmail(cEmail, "[3Corp] Avalie Nosso Atendimento", cHtml, {}, .F., .T., .F.)
                         ConOut("Email enviado para: " + cEmail)
                     Else

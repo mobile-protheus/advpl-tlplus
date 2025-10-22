@@ -83,6 +83,7 @@ class ArgusController from longclassname
     static method PostLocalizations()
     static method PutLocalizations()
     static method DeleteLocalizations()
+    static method getEfficiency()
     static method GetServiceFormats()
     static method PostServiceFormats()
     static method PutServiceFormats()
@@ -1014,6 +1015,21 @@ static method DeleteLocalizations(oTicketData) class ArgusController
 
     oJsonResult := oArgusModel:DeleteLocalizations(oTicketData)
     
+    return oJsonResult
+
+static method getEfficiency() class ArgusController
+    local oJsonResult := JsonObject():New()
+    local oArgusModel := JsonObject():New()
+
+    oArgusModel := ArgusModel():New()
+
+    oJsonResult := oArgusModel:getEfficiency()
+    
+    if oJsonResult == nil
+        oJsonResult['responseCode'] := '404'
+        oJsonResult['response'] := 'No efficiency found'
+    endif
+
     return oJsonResult
 
 static method GetServiceFormats(cId, cPage, cPageSize, cFilter) class ArgusController

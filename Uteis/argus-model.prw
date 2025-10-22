@@ -12,6 +12,7 @@ class ArgusModel from longclassname
 	method GetAttachments()
 	method GetTickets()
 	method GetSlaTickets()
+	method getEfficiency()
 	method GetBacklogData()
 	method getAgentsUpdates()
 	method GetQueueTickets()
@@ -411,6 +412,7 @@ method GetMessages(cTicketId, page, pageSize, cFilter, cCanGetPrivateMessages) c
             Z3C_DATA,
             Z3C_HORA,
             Z3C_PRIVAD,
+			Z3F_NAME,
 			Z3F_ID,
             CASE 
                 WHEN Z3F_TYPE = '2' THEN 'AGENTE'
@@ -466,6 +468,7 @@ method GetMessages(cTicketId, page, pageSize, cFilter, cCanGetPrivateMessages) c
 		oItem[ 'time' ]             := Alltrim(SQL_MESSAGES->Z3C_HORA)
 		oItem[ 'isPrivateMessage' ] := Alltrim(SQL_MESSAGES->Z3C_PRIVAD)
 		oItem[ 'messageSentBy' ]    := Alltrim(SQL_MESSAGES->MENSAGEM_ENVIADA_POR)
+		oItem[ 'senderName' ]       := Alltrim(SQL_MESSAGES->Z3F_NAME)
 
 		aadd(aItems, oItem)
 		oItem := JsonObject():New()
@@ -937,6 +940,49 @@ method getAgentsUpdates(cOrganizationId, cInitialDate, cEndDate) class ArgusMode
 		SQL_UPDATES->(DbSkip())
 	EndDo
 	SQL_UPDATES->(DbCloseArea())
+
+return aItems
+
+method getEfficiency(cOrganizationId, cInitialDate, cEndDate) class ArgusModel
+	local aItems := {}
+	local oItem := JsonObject():New()
+
+	BeginSql ALIAS "SQL_EFFICIENCY"
+		SELECT 
+			Z3A_ATRIBU,
+			COALESCE(NULLIF(MAX(Z3F.Z3F_NAME), ''), 'Sem atribuído') AS NOME_ATRIBUIDO,
+			COUNT(*) AS CONTAGEM_TICKETS,
+			SUM(CASE WHEN Z3A_STATUS = '5' THEN 1 ELSE 0 END) AS TICKETS_RESOLVIDOS,
+			AVG(CAST(NULLIF(Z3A_SATISF, '') AS DECIMAL(10,2))) AS MEDIA_SATISF
+		FROM 
+			Z3A010 Z3A
+		LEFT JOIN
+			Z3F010 Z3F ON Z3F.Z3F_ID = Z3A.Z3A_ATRIBU
+		GROUP BY 
+			Z3A.Z3A_ATRIBU
+		ORDER BY 
+			CONTAGEM_TICKETS DESC
+	EndSql
+
+	While !SQL_EFFICIENCY->(Eof())
+		If Z3F->(MsSeek(xFilial("Z3F")+SQL_EFFICIENCY->Z3A_ATRIBU) )
+			RecLock("Z3F", .F.)
+				oItem[ 'assignedPhoto' ] := Alltrim(Z3F->Z3F_PHOTO)
+			Z3F->(MsUnlock())
+		EndIf
+		Z3F->(DbCloseArea())
+
+		oItem[ 'assignedName' ]       := EncodeUTF8(Alltrim(SQL_EFFICIENCY->NOME_ATRIBUIDO))
+		oItem[ 'ticketsAmount' ]      := SQL_EFFICIENCY->CONTAGEM_TICKETS
+		oItem[ 'ticketsFinished' ]    := SQL_EFFICIENCY->TICKETS_RESOLVIDOS
+		oItem[ 'satisfactionMedium' ] := SQL_EFFICIENCY->MEDIA_SATISF
+
+		aadd(aItems, oItem)
+		oItem := JsonObject():New()
+
+		SQL_EFFICIENCY->(DbSkip())
+	EndDo
+	SQL_EFFICIENCY->(DbCloseArea())
 
 return aItems
 
@@ -2403,7 +2449,7 @@ method GetArticles(cId, page, pageSize, cFilter) class ArgusModel
 	While !SQL_ARTIGOS->(EoF())
 		If Z3E->(MsSeek(xFilial("Z3E")+SQL_ARTIGOS->Z3E_ID) )
 			RecLock("Z3E", .F.)
-				oItem[ 'content' ] := Alltrim(Z3E->Z3E_CONTEN)
+				oItem[ 'content' ] := EncodeUTF8(Alltrim(Z3E->Z3E_CONTEN))
 			Z3E->(MsUnlock())
 		EndIf
 		Z3E->(DbCloseArea())
@@ -3361,7 +3407,7 @@ method PostArticle(oUserData) class ArgusModel
 		Z3E->Z3E_FILIAL := xFilial("Z3E")
 		Z3E->Z3E_ID     := NextNumero("Z3E", 1, "Z3E_ID", .T.)
 		Z3E->Z3E_NAME   := getFieldData(Z3E->Z3E_NAME, oUserData[ 'name' ])
-		Z3E->Z3E_CONTEN   := getFieldData(Z3E->Z3E_CONTEN, oUserData[ 'content' ])
+		Z3E->Z3E_CONTEN   := getFieldData(Z3E->Z3E_CONTEN, DecodeUTF8(oUserData[ 'content' ]))
 	Z3E->(MsUnlock())
 
 	oResponse['code'] := 200
@@ -4858,7 +4904,8 @@ method EvaluateTicket(oTicketData) class ArgusModel
 	Z3A->(DbSetOrder(1))
 	If Z3A->(MsSeek(xFilial("Z3A") + oTicketData['id']))
 		RecLock("Z3A", .F.)
-		Z3A->Z3A_SATISF := oTicketData['satisfaction']
+			Z3A->Z3A_SATISF := oTicketData['satisfaction']
+			//Z3A->Z3A_DESSAT := oTicketData['description']
 		Z3A->(MsUnlock())
 	EndIf
 	Z3A->(DbCloseArea())
