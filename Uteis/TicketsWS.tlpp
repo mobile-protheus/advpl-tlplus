@@ -1,0 +1,3222 @@
+#Include "Protheus.ch"
+#Include "tbiconn.ch"
+#INCLUDE "TOTVS.CH"
+#INCLUDE "RESTFUL.CH"
+#INCLUDE "FWMVCDEF.CH"
+#include 'tlpp-core.th'
+#include 'tlpp-rest.th
+#Include "RwMake.ch"
+#INCLUDE "PARMTYPE.CH"
+
+/*/{Protheus.doc} GET ListaTickets
+Retorna lista de tickets 
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+@GET(endpoint="/ListaTickets",description="Serviço REST para retornar lista de tickets ")
+User Function ListaTickets
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3A := JsonObject():New()
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3A"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["tickets"] := JsonObject():New()
+	oJson["tickets"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+	While !(cAliasWS)->(EoF())
+		oJsonZ3A := JsonObject():New()
+		oJsonZ3A["branch"       ]:= RTrim((cAliasWS)->Z3A_FILIAL)
+		oJsonZ3A["id"           ]:= RTrim((cAliasWS)->Z3A_ID    )
+		oJsonZ3A["status"       ]:= RTrim((cAliasWS)->Z3A_STATUS)
+		oJsonZ3A["priority"     ]:= RTrim((cAliasWS)->Z3A_PRIORI)
+		oJsonZ3A["criticality"  ]:= RTrim((cAliasWS)->Z3A_CRITIC)
+		oJsonZ3A["sla"          ]:= RTrim((cAliasWS)->Z3A_SLA   )
+		oJsonZ3A["date"         ]:= DtoC((cAliasWS)->Z3A_DATA  )
+		oJsonZ3A["requesterId"  ]:= RTrim((cAliasWS)->Z3A_IDUSER)
+		oJsonZ3A["originId"     ]:= RTrim((cAliasWS)->Z3A_IDORG )
+		oJsonZ3A["subject"      ]:= RTrim((cAliasWS)->Z3A_ASSUNT)
+		oJsonZ3A["operator"     ]:= RTrim((cAliasWS)->Z3A_OPERAT)
+		oJsonZ3A["lastActivity" ]:= DtoC((cAliasWS)->Z3A_ULTATI)
+		oJsonZ3A["assigned"     ]:= RTrim((cAliasWS)->Z3A_ATRIBU)
+		oJsonZ3A["typeservice"  ]:= RTrim((cAliasWS)->Z3A_TPATEN)
+		oJsonZ3A["techLeader"   ]:= RTrim((cAliasWS)->Z3A_TECHLI)
+		oJsonZ3A["group"        ]:= RTrim((cAliasWS)->Z3A_GRUPO )
+		oJsonZ3A["typeTech"     ]:= RTrim((cAliasWS)->Z3A_TPTECH)
+		oJsonZ3A["queue"        ]:= RTrim((cAliasWS)->Z3A_IDFILA)
+		aAdd(oJson["tickets"], oJsonZ3A)
+		(cAliasWS)->(DBSkip())
+	EndDo
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc}  GET TICKET
+Retorna registro via TicketID
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+	@GET(endpoint="/ticket",description="Serviço REST para retornar Ticket filtrado pelo TicketID" )
+User Function ticket
+	Local lRet     := .T.
+	Local oJsonZ3A := JsonObject():New()
+	Local oJsonZ3C := JsonObject():New()
+	Local oJsonZ3D := JsonObject():New()
+	Local JParam   := oRest:getQueryRequest()
+	Local TicketID := IIf(Empty(JParam[ 'TicketID' ]), "", JParam[ 'TicketID' ])
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3A"
+	Local cAliasWSC := "Z3C"
+	Local cAliasWSD := "Z3D"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	//Se o TicketID estiver vazio
+	If Empty(TicketID)
+		//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+		oRest:setStatusCode(400)
+		oJsonZ3A['code']        := "400"
+		oJsonZ3A['error']    := 'ID vazio'
+		oJsonZ3A['solution'] := 'Informe o ID'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJsonZ3A:toJSON()))
+		Return(lRet)
+	Else
+		DbSelectArea(cAliasWS)
+		(cAliasWS)->(DbSetOrder(1))
+
+		//Se nao encontrar o registro
+		If ! (cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + TicketID))
+			//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJsonZ3A['code']        := "400"
+			oJsonZ3A['errorId']  := TicketID
+			oJsonZ3A['error']    := 'ID nao encontrado'
+			oJsonZ3A['solution'] := 'Verifique se o ID existe no cadastro da tabela ' + cAliasWS
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJsonZ3A:toJSON()))
+			Return(lRet)
+		Else
+			oJsonZ3A["branch"       ]:= RTrim((cAliasWS)->Z3A_FILIAL)
+			oJsonZ3A["id"           ]:= RTrim((cAliasWS)->Z3A_ID    )
+			oJsonZ3A["cc"           ]:= RTrim((cAliasWS)->Z3A_CC    )
+			oJsonZ3A["subject"      ]:= RTrim((cAliasWS)->Z3A_ASSUNT)
+			oJsonZ3A["locality"     ]:= RTrim((cAliasWS)->Z3A_LOCALI)
+			oJsonZ3A["type"         ]:= RTrim((cAliasWS)->Z3A_TIPO  )
+			oJsonZ3A["status"       ]:= RTrim((cAliasWS)->Z3A_STATUS)
+			oJsonZ3A["priority"     ]:= RTrim((cAliasWS)->Z3A_PRIORI)
+			oJsonZ3A["criticality"  ]:= RTrim((cAliasWS)->Z3A_CRITIC)
+			oJsonZ3A["date"         ]:= DtoC((cAliasWS)->Z3A_DATA  )
+			oJsonZ3A["time"         ]:= RTrim((cAliasWS)->Z3A_HORA  )
+			oJsonZ3A["downTime"     ]:= RTrim((cAliasWS)->Z3A_INDISP)
+			oJsonZ3A["equipment"    ]:= RTrim((cAliasWS)->Z3A_EQUIP )
+			oJsonZ3A["protocol"     ]:= RTrim((cAliasWS)->Z3A_PROTOC)
+			oJsonZ3A["operator"     ]:= RTrim((cAliasWS)->Z3A_OPERAT)
+			oJsonZ3A["requesterId"  ]:= RTrim((cAliasWS)->Z3A_IDUSER)
+			oJsonZ3A["originId"     ]:= RTrim((cAliasWS)->Z3A_IDORG )
+			oJsonZ3A["sla"          ]:= RTrim((cAliasWS)->Z3A_SLA   )
+			oJsonZ3A["contact"      ]:= RTrim((cAliasWS)->Z3A_CONTAT)
+			oJsonZ3A["completeName" ]:= RTrim((cAliasWS)->Z3A_COMNAM)
+			oJsonZ3A["lastActivity" ]:= DtoC((cAliasWS)->Z3A_ULTATI)
+			oJsonZ3A["assigned"     ]:= RTrim((cAliasWS)->Z3A_ATRIBU)
+			oJsonZ3A["typeservice"  ]:= RTrim((cAliasWS)->Z3A_TPATEN)
+			oJsonZ3A["techLeader"   ]:= RTrim((cAliasWS)->Z3A_TECHLI)
+			oJsonZ3A["group"        ]:= RTrim((cAliasWS)->Z3A_GRUPO )
+			oJsonZ3A["typeTech"     ]:= RTrim((cAliasWS)->Z3A_TPTECH)
+			oJsonZ3A["queue"        ]:= RTrim((cAliasWS)->Z3A_IDFILA)
+			DbSelectArea(cAliasWSC)
+			(cAliasWSC)->(DbSetOrder(2))
+			If (cAliasWSC)->(dbSeek(FWxFilial(cAliasWSC)+TicketID))
+				oJsonZ3A["messages"] := JsonObject():new()
+				oJsonZ3A["messages"] := {}
+				While !(cAliasWSC)->(EoF()) .And. (cAliasWSC)->Z3C_IDTICK == TicketID
+					oJsonZ3C := JsonObject():New()
+					oJsonZ3C["branch"]          :=  RTrim((cAliasWSC)->Z3C_FILIAL)
+					oJsonZ3C["id"]              :=  RTrim((cAliasWSC)->Z3C_ID)
+					oJsonZ3C["ticketId"]        :=  RTrim((cAliasWSC)->Z3C_IDTICK)
+					oJsonZ3C["message"]         :=  RTrim((cAliasWSC)->Z3C_MENSAG)
+					oJsonZ3C["to"]              :=  RTrim((cAliasWSC)->Z3C_DESTIN)
+					oJsonZ3C["from"]            :=  RTrim((cAliasWSC)->Z3C_REMETE)
+					oJsonZ3C["time"]            :=  RTrim((cAliasWSC)->Z3C_HORA)
+					oJsonZ3C["status"]          :=  RTrim((cAliasWSC)->Z3C_STATUS)
+					oJsonZ3C["isMessagePrivate"]:=  RTrim((cAliasWSC)->Z3C_PRIVAD)
+					oJsonZ3C["date"]            :=  dToC((cAliasWSC)->Z3C_DATA)
+					aAdd(oJsonZ3A["messages"], oJsonZ3C)
+					(cAliasWSC)->(DBSkip())
+				EndDo
+			EndIf
+
+			DbSelectArea(cAliasWSD)
+			(cAliasWSD)->(DbSetOrder(2))
+			If (cAliasWSD)->(dbSeek(FWxFilial(cAliasWSD)+TicketID))
+				oJsonZ3A["attachments"] := JsonObject():new()
+				oJsonZ3A["attachments"] := {}
+				While !(cAliasWSD)->(EoF()) .And. (cAliasWSD)->Z3D_IDTICK == TicketID
+					oJsonZ3D := JsonObject():New()
+					oJsonZ3D["branch"]       :=  RTrim((cAliasWSD)->Z3D_FILIAL)
+					oJsonZ3D["id"]           :=  RTrim((cAliasWSD)->Z3D_ID)
+					oJsonZ3D["name"]         :=  RTrim((cAliasWSD)->Z3D_NOME)
+					oJsonZ3D["ticketId"]     :=  RTrim((cAliasWSD)->Z3D_IDTICK)
+					oJsonZ3D["file"]         :=  RTrim((cAliasWSD)->Z3D_ANEXO)
+					aAdd(oJsonZ3A["attachments"], oJsonZ3D)
+					(cAliasWSD)->(DBSkip())
+				EndDo
+			EndIf
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJsonZ3A:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Post TICKET
+Inserção de novo Ticket
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@POST(endpoint="/CriaTicket",description= "Serviço REST para inclusao de Tickets" )
+User Function CriaTicket
+	Local lRet         := .T.
+	Local oObj1
+	Local nZ3C      := 0
+	Local nZ3D      := 0
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3A"
+	Local cAliasWSC := "Z3C"
+	Local cAliasWSD := "Z3D"
+	Local cID         := GetSxeNum(cAliasWS,"Z3A_ID")
+	Local cPara     := ""
+	Local cCC       := ""
+	Local cAssunto  := ""
+	Local cMensagem  := ""
+	Local cStatus    := ""
+	Local cTipo      := ""
+	Local cDownTown  := ""
+	Local cPriory    := ""
+	local oArgusModel := JsonObject():New()
+
+
+	Private _lRet   := .T.
+
+	cMensagem += " <!DOCTYPE html>"
+	cMensagem += " <html>"
+	cMensagem += " <head>"
+	cMensagem += " <style>"
+	cMensagem += " body { font-family: 'Segoe UI', sans-serif; background-color: #f2f2f2; padding: 20px; color: #333; }"
+	cMensagem += " .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.1); }"
+	cMensagem += " h2 { color: #2c3e50; margin-bottom: 20px; }"
+	cMensagem += " table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }"
+	cMensagem += " th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; vertical-align: top; }"
+	cMensagem += " th { background-color: #e8f0fe; font-weight: 600; }"
+	cMensagem += " tr:nth-child(even) { background-color: #f9f9f9; }"
+	cMensagem += " </style>"
+	cMensagem += " </head>"
+	cMensagem += " <body>"
+	cMensagem += "     <div class='container'>"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		(cAliasWS)->(dbSetOrder(1))
+		Begin Transaction
+
+			If RecLock(cAliasWS, .T.) //.T. Incluir / .F. Alterar
+				(cAliasWS)->Z3A_FILIAL := oObj1:branch
+				(cAliasWS)->Z3A_ID     := cID
+				(cAliasWS)->Z3A_CC     := oObj1:cc
+				(cAliasWS)->Z3A_ASSUNT := oObj1:subject
+				(cAliasWS)->Z3A_LOCALI := oObj1:locality
+				(cAliasWS)->Z3A_TIPO   := oObj1:type
+				(cAliasWS)->Z3A_STATUS := oObj1:status
+				(cAliasWS)->Z3A_PRIORI := oObj1:priority
+				(cAliasWS)->Z3A_CRITIC := oObj1:criticality
+				(cAliasWS)->Z3A_DATA   := CtoD(oObj1:date)
+				(cAliasWS)->Z3A_HORA   := oObj1:time
+				(cAliasWS)->Z3A_INDISP := oObj1:downTime
+				(cAliasWS)->Z3A_EQUIP  := oObj1:equipment
+				(cAliasWS)->Z3A_PROTOC := oObj1:protocol
+				(cAliasWS)->Z3A_OPERAT := oObj1:operator
+				(cAliasWS)->Z3A_IDUSER := oObj1:requesterId
+				(cAliasWS)->Z3A_IDORG  := oObj1:originId
+				(cAliasWS)->Z3A_SLA    := oObj1:sla
+				(cAliasWS)->Z3A_CONTAT := oObj1:contact
+				(cAliasWS)->Z3A_COMNAM := oObj1:completeName
+				(cAliasWS)->Z3A_ULTATI := CtoD(oObj1:lastActivity)
+				(cAliasWS)->Z3A_ATRIBU := oObj1:assigned
+				(cAliasWS)->Z3A_TPATEN := oObj1:typeservice
+				(cAliasWS)->Z3A_TECHLI := oObj1:techLeader
+				(cAliasWS)->Z3A_GRUPO  := oObj1:group
+				(cAliasWS)->Z3A_TPTECH := oObj1:typeTech
+				(cAliasWS)->Z3A_IDFILA := oObj1:queue
+				(cAliasWS)->(MsUnlock())
+
+				Do Case
+				Case RTrim((cAliasWS)->Z3A_STATUS) == '0'
+					cStatus := 'Novo'
+				Case RTrim((cAliasWS)->Z3A_STATUS) == '1'
+					cStatus := 'Aberto'
+				Case RTrim((cAliasWS)->Z3A_STATUS) == '2'
+					cStatus := 'Pendente'
+				Case RTrim((cAliasWS)->Z3A_STATUS) == '3'
+					cStatus := 'Em Espera'
+				Case RTrim((cAliasWS)->Z3A_STATUS) == '4'
+					cStatus := 'Resolvido'
+				Case RTrim((cAliasWS)->Z3A_STATUS) == '5'
+					cStatus := 'Fechado'
+				endCase
+
+				Do Case
+				Case RTrim((cAliasWS)->Z3A_TIPO) == '1'
+					cTipo := 'Pergunta'
+				Case RTrim((cAliasWS)->Z3A_TIPO) == '2'
+					cTipo := 'Incidente'
+				Case RTrim((cAliasWS)->Z3A_TIPO) == '3'
+					cTipo := 'Problema'
+				Case RTrim((cAliasWS)->Z3A_TIPO) == '4'
+					cTipo := 'Tarefa'
+				endCase
+
+				Do Case
+				Case RTrim((cAliasWS)->Z3A_INDISP) == '1'
+					cDownTown := 'N/A'
+				Case RTrim((cAliasWS)->Z3A_INDISP) == '2'
+					cDownTown := 'Parcial'
+				Case RTrim((cAliasWS)->Z3A_INDISP) == '3'
+					cDownTown := 'Total'
+				EndCase
+
+				Do Case
+				Case RTrim((cAliasWS)->Z3A_PRIORI) == '1'
+					cPriory := 'Consulta'
+				Case RTrim((cAliasWS)->Z3A_PRIORI) == '2'
+					cPriory := 'Baixa'
+				Case RTrim((cAliasWS)->Z3A_PRIORI) == '3'
+					cPriory := 'Media'
+				Case RTrim((cAliasWS)->Z3A_PRIORI) == '4'
+					cPriory := 'Alta'
+				Case RTrim((cAliasWS)->Z3A_PRIORI) == '5'
+					cPriory := 'Critica'
+				EndCase
+
+				cAssunto  := "Ticket: " + (cAliasWS)->Z3A_FILIAL+(cAliasWS)->Z3A_ID
+
+				cMensagem += '     <p style="text-align:center;"><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<--- Não escrever abaixo dessa linha --->>>>>>>>>>>>>>>>>>>>>>>>>>>>>></p>'
+				cMensagem += "         <h2>Ticket #" + RTrim((cAliasWS)->Z3A_FILIAL)+RTrim((cAliasWS)->Z3A_ID) + "</h2>"
+				cMensagem += "         <table>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>ID</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_ID) + "</td>"
+				cMensagem += "                 <th>Email</th>"
+				cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_CC) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Assunto</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_ASSUNT) + "</td>"
+				cMensagem += "                 <th>Localidade</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_LOCALI) + "</td>"
+				cMensagem += "                 <th>Criticidade</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_CRITIC) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Tipo</th>"
+				cMensagem += "                 <td>" +  cTipo + "</td>"
+				cMensagem += "                 <th>Status</th>"
+				cMensagem += "                 <td>" + cStatus + "</td>"
+				cMensagem += "                 <th>Prioridade</th>"
+				cMensagem += "                 <td>" + cPriory + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Data</th>"
+				cMensagem += "                 <td>" + DtoC((cAliasWS)->Z3A_DATA) + "</td>"
+				cMensagem += "                 <th>Hora</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_HORA) + "</td>"
+				cMensagem += "                 <th>Downtime</th>"
+				cMensagem += "                 <td>" + cDownTown + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Equipamento</th>"
+				cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_EQUIP) + "</td>"
+				cMensagem += "                 <th>Protocolo</th>"
+				cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_PROTOC) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Operador</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_OPERAT) + "</td>"
+				cMensagem += "                 <th>Solicitante</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_IDUSER) + "</td>"
+				cMensagem += "                 <th>Organização</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_IDORG) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>SLA</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_SLA) + "</td>"
+				cMensagem += "                 <th>Contato</th>"
+				cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_CONTAT) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Nome Completo</th>"
+				cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_COMNAM) + "</td>"
+				cMensagem += "                 <th>Última Atividade</th>"
+				cMensagem += "                 <td>" + DtoC((cAliasWS)->Z3A_ULTATI) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Responsável</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_ATRIBU) + "</td>"
+				cMensagem += "                 <th>Tipo de Serviço</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_TPATEN) + "</td>"
+				cMensagem += "                 <th>Líder Técnico</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_TECHLI) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "             <tr>"
+				cMensagem += "                 <th>Grupo</th>"
+				cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_GRUPO) + "</td>"
+				cMensagem += "                 <th>Tipo Tecnologia</th>"
+				cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_TPTECH) + "</td>"
+				cMensagem += "             </tr>"
+				cMensagem += "         </table>"
+				cMensagem += "     </div>"
+
+				cCC += IIF(Empty(RTrim((cAliasWS)->Z3A_CC)), RTrim((cAliasWS)->Z3A_CC), ";"+RTrim((cAliasWS)->Z3A_CC))
+				cPara += cCC
+				ConfirmSx8()
+
+				cMensagem += " <div class='container'>"
+				cMensagem += " <table>"
+				cMensagem += " <tr>"
+				cMensagem += " <th>Data</th>"
+				cMensagem += " <th>Hora</th>"
+				cMensagem += " <th>Status</th>"
+				cMensagem += " <th>Destinatario</th>"
+				cMensagem += " <th>Remetente</th>"
+				cMensagem += " <th colspan='10'>Mensagem</th>"
+				cMensagem += " </tr>"
+
+				For nZ3C := 1 To Len(oObj1:messages)
+					If RecLock(cAliasWSC, .T.)
+						(cAliasWSC)->Z3C_FILIAL := oObj1:messages[nZ3C]:branch
+						(cAliasWSC)->Z3C_ID     :=  GetSxeNum(cAliasWSC,"Z3C_ID")
+						(cAliasWSC)->Z3C_IDTICK := cID
+						(cAliasWSC)->Z3C_MENSAG := oObj1:messages[nZ3C]:message
+						(cAliasWSC)->Z3C_DESTIN := oObj1:messages[nZ3C]:to
+						(cAliasWSC)->Z3C_REMETE := oObj1:messages[nZ3C]:from
+						(cAliasWSC)->Z3C_DATA   := CtoD(oObj1:messages[nZ3C]:date)
+						(cAliasWSC)->Z3C_HORA   := oObj1:messages[nZ3C]:time
+						(cAliasWSC)->Z3C_STATUS := oObj1:status
+						(cAliasWSC)->Z3C_PRIVAD := oObj1:messages[nZ3C]:isMessagePrivate
+						(cAliasWSC)->(MsUnlock())
+						ConfirmSx8()
+
+
+						If !oObj1:messages[nZ3C]:to $ cPara
+							cPara += IIF(Empty(cPara), oObj1:messages[nZ3C]:to , ";"+oObj1:messages[nZ3C]:to)
+						EndIf
+
+						Do Case
+						Case oObj1:status == '0'
+							cStatus := 'Novo'
+						Case oObj1:status == '1'
+							cStatus := 'Aberto'
+						Case oObj1:status == '2'
+							cStatus := 'Pendente'
+						Case oObj1:status == '3'
+							cStatus := 'Em Espera'
+						Case oObj1:status == '4'
+							cStatus := 'Resolvido'
+						Case oObj1:status == '5'
+							cStatus := 'Fechado'
+						endCase
+
+						If oObj1:messages[nZ3C]:isMessagePrivate == "0"
+							cMensagem += " <tr>"
+							cMensagem += " <td>" + oObj1:messages[nZ3C]:date    + "</td>"
+							cMensagem += " <td>" + oObj1:messages[nZ3C]:time    + "</td>"
+							cMensagem += " <td>" + cStatus                      + "</td>"
+							cMensagem += " <td>" + oObj1:messages[nZ3C]:to      + "</td>"
+							cMensagem += " <td>" + oObj1:messages[nZ3C]:from    + "</td>"
+							cMensagem += " <td>" + oObj1:messages[nZ3C]:message + "</td>"
+							cMensagem += " </tr>"
+						EndIf
+					Else
+						RollbackSx8()
+						DisarmTransaction()
+						oRest:setStatusCode(400)
+						oJson['code']        := "400"
+						oJson['error']    := 'Erro em reclock de tabela Z3C'
+						oJson['solution'] := 'Contate o administrador do sistema'
+						//Define o retorno
+						oRest:setHeaderResponse(jHeaders)
+						oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+						Return(lRet)
+					EndIf
+				Next nZ3C
+
+				cMensagem += " </table>"
+				cMensagem += " </div>"
+
+				For nZ3D := 1 To Len(oObj1:attachments)
+					If RecLock(cAliasWSD, .T.)
+						(cAliasWSD)->Z3D_FILIAL := oObj1:attachments[nZ3D]:branch
+						(cAliasWSD)->Z3D_ID     := GetSxeNum(cAliasWSD,"Z3D_ID")
+						(cAliasWSD)->Z3D_IDTICK := cID
+						(cAliasWSD)->Z3D_NOME   := oObj1:attachments[nZ3D]:name
+						(cAliasWSD)->Z3D_ANEXO  := oObj1:attachments[nZ3D]:file
+						(cAliasWSD)->(MsUnlock())
+						ConfirmSx8()
+					Else
+						RollbackSx8()
+						DisarmTransaction()
+						oRest:setStatusCode(400)
+						oJson['code']        := "400"
+						oJson['error']    := 'Erro em reclock de tabela' + cAliasWSD
+						oJson['solution'] := 'Contate o administrador do sistema'
+						//Define o retorno
+						oRest:setHeaderResponse(jHeaders)
+						oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+						Return(lRet)
+					EndIf
+				Next nZ3D
+			Else
+				RollbackSx8()
+				DisarmTransaction()
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['error']    := 'Erro em inclusao de Ticket ID: '+ cID
+				oJson['solution'] := 'Contate o administrador do sistema'
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			EndIf
+
+			//envio de e-mail
+			//EnviaEmail(aPara, aCC, aCCo, cAssunto) //aPara, aCC, aCCo, cAssunto
+
+			cMensagem += " </body>"
+			cMensagem += " </html>"
+			cMensagem += " "
+
+			EnviaEmail(cPara, cAssunto, cMensagem, , , 2)
+
+			oJson['message']    := 'Inclusao com sucesso do Ticket ID: '+ cID
+			oJson['ticketId']   := cID
+		End Transaction
+
+	EndIf
+	oArgusModel := ArgusModel():New()
+	oArgusModel:CheckTriggers(cID)
+//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} Put ticket
+Alteraçao registro via TicketID
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@PUT(endpoint="/alteraTicket",description= "Serviço REST para Alterar Ticket de TicketID enviado" )
+User Function alteraTicket
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oObj1
+	Local JParam   := oRest:getQueryRequest()
+	Local TicketID := IIf(Empty(JParam[ 'ticketID' ]), "", JParam[ 'ticketID' ])
+	Local cJSon       := oRest:getBodyRequest() as character
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3A"
+	Local cAliasWSC := "Z3C"
+	Local cID         := GetSxeNum(cAliasWS,"Z3A_ID")
+	Local cPara     := ""
+	Local cCC       := ""
+	Local cAssunto  := "Ticket: " + cID
+	Local cMensagem  := ""
+	Local cStatus    := ""
+	Local cTipo      := ""
+	Local cDownTown  := ""
+	Local cPriory    := ""
+
+	Private _lRet   := .T.
+
+	cMensagem += " <!DOCTYPE html>"
+	cMensagem += " <html>"
+	cMensagem += " <head>"
+	cMensagem += " <style>"
+	cMensagem += " body { font-family: 'Segoe UI', sans-serif; background-color: #f2f2f2; padding: 20px; color: #333; }"
+	cMensagem += " .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.1); }"
+	cMensagem += " h2 { color: #2c3e50; margin-bottom: 20px; }"
+	cMensagem += " table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }"
+	cMensagem += " th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; vertical-align: top; }"
+	cMensagem += " th { background-color: #e8f0fe; font-weight: 600; }"
+	cMensagem += " tr:nth-child(even) { background-color: #f9f9f9; }"
+	cMensagem += " </style>"
+	cMensagem += " </head>"
+	cMensagem += " <body>"
+	cMensagem += "     <div class='container'>"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Se o TicketID estiver vazio
+		If Empty(TicketID)
+			//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['error']    := 'ID vazio'
+			oJson['solution'] := 'Informe o ID'
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			DbSelectArea(cAliasWS)
+			(cAliasWS)->(DbSetOrder(1))
+
+			//Se nao encontrar o registro
+			If !(cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + TicketID))
+				//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['errorId']  := TicketID
+				oJson['error']    := 'ID nao encontrado'
+				oJson['solution'] := 'Verifique se o ID existe no cadastro da tabela ' + cAliasWS
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			Else
+				//Deserializa a string JSON
+				FWJsonDeserialize(cJson, @oObj1)
+				Begin Transaction
+					If RecLock(cAliasWS, .F.) //.T. Incluir / .F. Alterar
+						(cAliasWS)->Z3A_FILIAL := oObj1:branch
+						(cAliasWS)->Z3A_CC     := oObj1:cc
+						(cAliasWS)->Z3A_ASSUNT := oObj1:subject
+						(cAliasWS)->Z3A_LOCALI := oObj1:locality
+						(cAliasWS)->Z3A_TIPO   := oObj1:type
+						(cAliasWS)->Z3A_STATUS := oObj1:status
+						(cAliasWS)->Z3A_PRIORI := oObj1:priority
+						(cAliasWS)->Z3A_CRITIC := oObj1:criticality
+						(cAliasWS)->Z3A_DATA   := CtoD(oObj1:date)
+						(cAliasWS)->Z3A_HORA   := oObj1:time
+						(cAliasWS)->Z3A_INDISP := oObj1:downTime
+						(cAliasWS)->Z3A_EQUIP  := oObj1:equipment
+						(cAliasWS)->Z3A_PROTOC := oObj1:protocol
+						(cAliasWS)->Z3A_OPERAT := oObj1:operator
+						(cAliasWS)->Z3A_IDUSER := oObj1:requesterId
+						(cAliasWS)->Z3A_IDORG  := oObj1:originId
+						(cAliasWS)->Z3A_SLA    := oObj1:sla
+						(cAliasWS)->Z3A_CONTAT := oObj1:contact
+						(cAliasWS)->Z3A_COMNAM := oObj1:completeName
+						(cAliasWS)->Z3A_ULTATI := CtoD(oObj1:lastActivity)
+						(cAliasWS)->Z3A_ATRIBU := oObj1:assigned
+						(cAliasWS)->Z3A_TPATEN := oObj1:typeservice
+						(cAliasWS)->Z3A_TECHLI := oObj1:techLeader
+						(cAliasWS)->Z3A_GRUPO  := oObj1:group
+						(cAliasWS)->Z3A_TPTECH := oObj1:typeTech
+						(cAliasWS)->Z3A_IDFILA := oObj1:queue
+						(cAliasWS)->(MsUnlock())
+
+						oJson['Message']   := 'Alterado com Sucesso'
+						oJson['TicketId']  := TicketID
+
+						cAssunto  := "Ticket: " + (cAliasWS)->Z3A_FILIAL+(cAliasWS)->Z3A_ID
+
+						Do Case
+
+						Case RTrim((cAliasWS)->Z3A_STATUS) == '0'
+							cStatus := 'Novo'
+						Case RTrim((cAliasWS)->Z3A_STATUS) == '1'
+							cStatus := 'Aberto'
+						Case RTrim((cAliasWS)->Z3A_STATUS) == '2'
+							cStatus := 'Pendente'
+						Case RTrim((cAliasWS)->Z3A_STATUS) == '3'
+							cStatus := 'Em Espera'
+						Case RTrim((cAliasWS)->Z3A_STATUS) == '4'
+							cStatus := 'Resolvido'
+						Case RTrim((cAliasWS)->Z3A_STATUS) == '5'
+							cStatus := 'Fechado'
+						endCase
+
+						Do Case
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '1'
+							cTipo := 'Pergunta'
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '2'
+							cTipo := 'Incidente'
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '3'
+							cTipo := 'Problema'
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '4'
+							cTipo := 'Tarefa'
+						endCase
+
+						Do Case
+						Case RTrim((cAliasWS)->Z3A_INDISP) == '1'
+							cDownTown := 'N/A'
+						Case RTrim((cAliasWS)->Z3A_INDISP) == '2'
+							cDownTown := 'Parcial'
+						Case RTrim((cAliasWS)->Z3A_INDISP) == '3'
+							cDownTown := 'Total'
+						EndCase
+
+						Do Case
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '1'
+							cPriory := 'Consulta'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '2'
+							cPriory := 'Baixa'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '3'
+							cPriory := 'Media'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '4'
+							cPriory := 'Alta'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '5'
+							cPriory := 'Critica'
+						EndCase
+
+						cMensagem += '     <p style="text-align:center;"><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<--- Não escrever abaixo dessa linha --->>>>>>>>>>>>>>>>>>>>>>>>>>>>>></p>'
+						cMensagem += "         <h2>Ticket #" + RTrim((cAliasWS)->Z3A_FILIAL)+RTrim((cAliasWS)->Z3A_ID) + "</h2>"
+						cMensagem += "         <table>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>ID</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_ID) + "</td>"
+						cMensagem += "                 <th>Email</th>"
+						cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_CC) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Assunto</th>"
+						cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_ASSUNT) + "</td>"
+						cMensagem += "                 <th>Localidade</th>"
+						cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_LOCALI) + "</td>"
+						cMensagem += "                 <th>Criticidade</th>"
+						cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_CRITIC) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Tipo</th>"
+						cMensagem += "                 <td>" +  cTipo + "</td>"
+						cMensagem += "                 <th>Status</th>"
+						cMensagem += "                 <td>" + cStatus + "</td>"
+						cMensagem += "                 <th>Prioridade</th>"
+						cMensagem += "                 <td>" + cPriory + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Data</th>"
+						cMensagem += "                 <td>" + DtoC((cAliasWS)->Z3A_DATA) + "</td>"
+						cMensagem += "                 <th>Hora</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_HORA) + "</td>"
+						cMensagem += "                 <th>Downtime</th>"
+						cMensagem += "                 <td>" + cDownTown + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Equipamento</th>"
+						cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_EQUIP) + "</td>"
+						cMensagem += "                 <th>Protocolo</th>"
+						cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_PROTOC) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Operador</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_OPERAT) + "</td>"
+						cMensagem += "                 <th>Solicitante</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_IDUSER) + "</td>"
+						cMensagem += "                 <th>Organização</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_IDORG) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>SLA</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_SLA) + "</td>"
+						cMensagem += "                 <th>Contato</th>"
+						cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_CONTAT) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Nome Completo</th>"
+						cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_COMNAM) + "</td>"
+						cMensagem += "                 <th>Última Atividade</th>"
+						cMensagem += "                 <td>" + DtoC((cAliasWS)->Z3A_ULTATI) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Responsável</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_ATRIBU) + "</td>"
+						cMensagem += "                 <th>Tipo de Serviço</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_TPATEN) + "</td>"
+						cMensagem += "                 <th>Líder Técnico</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_TECHLI) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "             <tr>"
+						cMensagem += "                 <th>Grupo</th>"
+						cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_GRUPO) + "</td>"
+						cMensagem += "                 <th>Tipo Tecnologia</th>"
+						cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_TPTECH) + "</td>"
+						cMensagem += "             </tr>"
+						cMensagem += "         </table>"
+						cMensagem += "     </div>"
+
+						cCC += IIF(Empty(RTrim((cAliasWS)->Z3A_CC)), RTrim((cAliasWS)->Z3A_CC), ";"+RTrim((cAliasWS)->Z3A_CC))
+						cPara += cCC
+
+						cMensagem += " <div class='container'>"
+						cMensagem += " <table>"
+						cMensagem += " <tr>"
+						cMensagem += " <th>Data</th>"
+						cMensagem += " <th>Hora</th>"
+						cMensagem += " <th>Status</th>"
+						cMensagem += " <th>Destinatario</th>"
+						cMensagem += " <th>Remetente</th>"
+						cMensagem += " <th colspan='10'>Mensagem</th>"
+						cMensagem += " </tr>"
+
+						DbSelectArea(cAliasWSC)
+						(cAliasWSC)->(DbSetOrder(2))
+						If (cAliasWSC)->(dbSeek(FWxFilial(cAliasWSC)+TicketID))
+							While !(cAliasWSC)->(EoF()) .And. (cAliasWSC)->Z3C_IDTICK == TicketID
+								Do Case
+
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '0'
+									cStatus := 'Novo'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '1'
+									cStatus := 'Aberto'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '2'
+									cStatus := 'Pendente'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '3'
+									cStatus := 'Em Espera'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '4'
+									cStatus := 'Resolvido'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '5'
+									cStatus := 'Fechado'
+								endCase
+
+								cMensagem += " <tr>"
+								cMensagem += " <td>" +  dToC((cAliasWSC)->Z3C_DATA)     + "</td>"
+								cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_HORA)     + "</td>"
+								cMensagem += " <td>" + cStatus    + "</td>"
+								cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_DESTIN)   + "</td>"
+								cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_REMETE)   + "</td>"
+								cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_MENSAG)   + "</td>"
+								cMensagem += " </tr>"
+
+								If ! (cAliasWSC)->Z3C_DESTIN $ cPara
+									cPara += IIF(Empty(cPara),  (cAliasWSC)->Z3C_DESTIN , ";"+ (cAliasWSC)->Z3C_DESTIN)
+								EndIf
+
+								(cAliasWSC)->(DBSkip())
+							EndDo
+						EndIf
+						cMensagem += " </table>"
+						cMensagem += " </div>"
+					Else
+						DisarmTransaction()
+						oRest:setStatusCode(400)
+						oJson['code']        := "400"
+						oJson['errorId']  := TicketID
+						oJson['error']    := 'Erro no reclock do registro para alteracao'
+						oJson['solution'] := 'Json Esta em branco'
+						//Define o retorno
+						oRest:setHeaderResponse(jHeaders)
+						oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+						Return(lRet)
+					EndIf
+				End Transaction
+				cMensagem += " </body>"
+				cMensagem += " </html>"
+				cMensagem += " "
+				EnviaEmail(cPara, cAssunto, cMensagem, , , 2)
+			EndIf
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Put Tipo do ticket
+Alteraçao de tipo do registro via TicketID
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@PUT(endpoint="/alteraTipoTicket",description= "Serviço REST para Alterar tipo do Ticket de TicketID enviado" )
+User Function alteraTipoTicket
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oObj1
+	Local JParam   := oRest:getQueryRequest()
+	Local TicketID := IIf(Empty(JParam[ 'ticketID' ]), "", JParam[ 'ticketID' ])
+	Local cJSon       := oRest:getBodyRequest() as character
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3A"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Se o TicketID estiver vazio
+		If Empty(TicketID)
+			//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['error']    := 'ID vazio'
+			oJson['solution'] := 'Informe o ID'
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			DbSelectArea(cAliasWS)
+			(cAliasWS)->(DbSetOrder(1))
+
+			//Se nao encontrar o registro
+			If !(cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + TicketID))
+				//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['errorId']  := TicketID
+				oJson['error']    := 'ID nao encontrado'
+				oJson['solution'] := 'Verifique se o ID existe no cadastro da tabela ' + cAliasWS
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			Else
+				//Deserializa a string JSON
+				FWJsonDeserialize(cJson, @oObj1)
+				Begin Transaction
+					If RecLock(cAliasWS, .F.) //.T. Incluir / .F. Alterar
+						(cAliasWS)->Z3A_TIPO   := iIf(!Empty(oObj1:type), oObj1:type, (cAliasWS)->Z3A_TIPO  )   // - 01 Tp Ticket
+						(cAliasWS)->(MsUnlock())
+						oJson['Message']   := 'Tipo do Ticket alterado com Sucesso'
+						oJson['TicketId']  := TicketID
+
+					Else
+						DisarmTransaction()
+						oRest:setStatusCode(400)
+						oJson['code']        := "400"
+						oJson['errorId']  := TicketID
+						oJson['error']    := 'Erro no reclock do registro para alteracao'
+						oJson['solution'] := 'Json Esta em branco'
+						//Define o retorno
+						oRest:setHeaderResponse(jHeaders)
+						oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+						Return(lRet)
+					EndIf
+				End Transaction
+			EndIf
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET ListaSolicitante
+Retorna lista de solicitante 
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaSolicitante",description="Serviço REST para retornar lista de Solicitantes")
+User Function ListaSolicitante
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3B := JsonObject():New()
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3B"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["Solicitantes"] := JsonObject():New()
+	oJson["Solicitantes"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+	While !(cAliasWS)->(EoF())
+		oJsonZ3B := JsonObject():New()
+		oJsonZ3B["branch"]         := RTrim((cAliasWS)->Z3B_FILIAL)
+		oJsonZ3B["id"]             := RTrim((cAliasWS)->Z3B_ID)
+		oJsonZ3B["name"]           := RTrim((cAliasWS)->Z3B_NOME)
+		oJsonZ3B["photo"]          := RTrim((cAliasWS)->Z3B_FOTO)
+		oJsonZ3B["organizationId"] := RTrim((cAliasWS)->Z3B_IDORG)
+		oJsonZ3B["contact"]        := RTrim((cAliasWS)->Z3B_CONTAT)
+		aAdd(oJson["Solicitantes"], oJsonZ3B)
+		(cAliasWS)->(DBSkip())
+	EndDo
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Post Solicitante
+Inserção de novo Solicitante
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@POST(endpoint="/CriaSolicitante",description= "Serviço REST para inclusao de Solicitante" )
+User Function CriaSolicitante
+	Local lRet         := .T.
+	Local oObj1
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3B"
+
+	Private _lRet   := .T.
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		(cAliasWS)->(dbSetOrder(1))
+		Begin Transaction
+			If RecLock(cAliasWS, .T.) //.T. Incluir / .F. Alterar
+				(cAliasWS)->Z3B_FILIAL := oObj1:branch                 // - 01 Filial
+				(cAliasWS)->Z3B_ID     := GetSxeNum(cAliasWS,"Z3B_ID")    // - 02 ID Solicitan
+				(cAliasWS)->Z3B_NOME   := oObj1:name                   // - 03 Nome Solicit
+				(cAliasWS)->Z3B_FOTO   := oObj1:photo                   // - 04 Foto Solicit
+				(cAliasWS)->Z3B_IDORG  := oObj1:organizationId          // - 05 Id Organizac
+				(cAliasWS)->Z3B_CONTAT := oObj1:contact                 // - 06 Cont. Solici
+				(cAliasWS)->(MsUnlock())
+			Else
+				RollbackSx8()
+				DisarmTransaction()
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['error']    := 'Erro em inclusao de Solicitante: '+ oObj1:name
+				oJson['solution'] := 'Contate o administrador do sistema'
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			EndIf
+			oJson['message']    := 'Inclusao com sucesso do Solicitante: '+ oObj1:name
+			ConfirmSx8()
+		End Transaction
+	EndIf
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} Put Solicitante
+Inserção de novo Solicitante
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@PUT(endpoint="/AlteraSolicitante",description= "Serviço REST para inclusao de Solicitante" )
+User Function AlteraSolicitante
+	Local lRet := .T.
+	Local oObj1
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local JParam       := oRest:getQueryRequest()
+	Local cID         := IIf(Empty(JParam[ 'id' ]), "", JParam[ 'id' ])
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3B"
+
+	Private _lRet   := .T.
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		If Empty(cID)
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['error']    := 'Erro em json enviado'
+			oJson['solution'] := 'Tag id não foi enviado'
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			(cAliasWS)->(dbSetOrder(1))
+			Begin Transaction
+				If (cAliasWS)->(DbSeek(FwxFilial(cAliasWS)+PadR(oObj1:id, TamSX3("Z3B_ID")[1],' ')))
+
+					If RecLock(cAliasWS, .F.) //.T. Incluir / .F. Alterar
+						(cAliasWS)->Z3B_FILIAL := oObj1:branch             // - 01 Filial
+						(cAliasWS)->Z3B_NOME   := oObj1:name               // - 03 Nome Solicit
+						(cAliasWS)->Z3B_FOTO   := oObj1:photo           // - 04 Foto Solicit
+						(cAliasWS)->Z3B_IDORG  := oObj1:organizationId     // - 05 Id Organizac
+						(cAliasWS)->Z3B_CONTAT := oObj1:contact         // - 06 Cont. Solici
+						(cAliasWS)->(MsUnlock())
+					Else
+						DisarmTransaction()
+						oRest:setStatusCode(400)
+						oJson['code']        := "400"
+						oJson['error']    := 'Erro em alteracao de Solicitante: '+ oObj1:name
+						oJson['solution'] := 'Contate o administrador do sistema'
+						//Define o retorno
+						oRest:setHeaderResponse(jHeaders)
+						oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+						Return(lRet)
+					EndIf
+					oJson['message']    := 'Alteracao com sucesso do Solicitante: '+ oObj1:name
+				Else
+					DisarmTransaction()
+					oRest:setStatusCode(400)
+					oJson['code']        := "400"
+					oJson['error']    := 'Solicitante nao encontrado no cadastro.'
+					oJson['solution'] := 'Enviar metodo Post para incluir'
+					//Define o retorno
+					oRest:setHeaderResponse(jHeaders)
+					oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+					Return(lRet)
+				EndIf
+			End Transaction
+		EndIf
+	EndIf
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} GET Lista Mensagens
+Retorna lista de mensagens dos Tickets 
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaMensagens",description="Serviço REST para retornar lista de mensagens dos Tickets")
+User Function ListaMensagens
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3C := JsonObject():New()
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3C"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["messages"] := JsonObject():New()
+	oJson["messages"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(2))
+	(cAliasWS)->(DbGoTop())
+	While !(cAliasWS)->(EoF())
+		oJsonZ3C := JsonObject():New()
+		oJsonZ3C["branch"]          :=  RTrim((cAliasWS)->Z3C_FILIAL)
+		oJsonZ3C["íd"]              :=  RTrim((cAliasWS)->Z3C_ID)
+		oJsonZ3C["ticketId"]        :=  RTrim((cAliasWS)->Z3C_IDTICK)
+		oJsonZ3C["content"]         :=  RTrim((cAliasWS)->Z3C_MENSAG)
+		oJsonZ3C["to"]              :=  RTrim((cAliasWS)->Z3C_DESTIN)
+		oJsonZ3C["from"]            :=  RTrim((cAliasWS)->Z3C_REMETE)
+		oJsonZ3C["time"]            :=  RTrim((cAliasWS)->Z3C_HORA)
+		oJsonZ3C["status"]          :=  RTrim((cAliasWS)->Z3C_STATUS)
+		oJsonZ3C["isMessagePrivate"]:=  RTrim((cAliasWSC)->Z3C_PRIVAD)
+		oJsonZ3C["date"]            :=  dToC((cAliasWS)->Z3C_DATA)
+		aAdd(oJson["messages"], oJsonZ3C)
+		(cAliasWS)->(DBSkip())
+	EndDo
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET Mensagens Tickets Especifico
+Retorna lista de mensagens de Ticket especifico
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/Mensagens",description="Serviço REST para retornar mensagens de Ticket")
+User Function Mensagens
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3C := JsonObject():New()
+	Local JParam   := oRest:getQueryRequest()
+	Local TicketID := IIf(Empty(JParam[ 'TicketID' ]), "", JParam[ 'TicketID' ])
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3C"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	//Se o TicketID estiver vazio
+	If Empty(TicketID)
+		//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'ID vazio'
+		oJson['solution'] := 'Informe o ID'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		DbSelectArea(cAliasWS)
+		(cAliasWS)->(DbSetOrder(2))
+
+		//Se nao encontrar o registro
+		If ! (cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + TicketID))
+			//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['errorId']  := TicketID
+			oJson['error']    := 'ID nao encontrado'
+			oJson['solution'] := 'Verifique se o ID existe no cadastro da tabela ' + cAliasWS
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			DbSelectArea(cAliasWS)
+			(cAliasWS)->(DbSetOrder(2))
+			If (cAliasWS)->(dbSeek(FWxFilial(cAliasWS)+TicketID))
+				oJson["messages"] := JsonObject():new()
+				oJson["messages"] := {}
+				While !(cAliasWS)->(EoF()) .And. (cAliasWS)->Z3C_IDTICK == TicketID
+					oJsonZ3C := JsonObject():New()
+					oJsonZ3C["branch"]          :=  RTrim((cAliasWS)->Z3C_FILIAL)
+					oJsonZ3C["íd"]              :=  RTrim((cAliasWS)->Z3C_ID)
+					oJsonZ3C["ticketId"]        :=  RTrim((cAliasWS)->Z3C_IDTICK)
+					oJsonZ3C["content"]         :=  RTrim((cAliasWS)->Z3C_MENSAG)
+					oJsonZ3C["to"]              :=  RTrim((cAliasWS)->Z3C_DESTIN)
+					oJsonZ3C["from"]            :=  RTrim((cAliasWS)->Z3C_REMETE)
+					oJsonZ3C["time"]            :=  RTrim((cAliasWS)->Z3C_HORA)
+					oJsonZ3C["status"]          :=  RTrim((cAliasWS)->Z3C_STATUS)
+					oJsonZ3C["isMessagePrivate"]:=  RTrim((cAliasWSC)->Z3C_PRIVAD)
+					oJsonZ3C["date"]            :=  dToC((cAliasWS)->Z3C_DATA)
+					aAdd(oJson["messages"], oJsonZ3C)
+					(cAliasWS)->(DBSkip())
+				EndDo
+			EndIf
+
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Post Mensagens
+Inclusão de mensagem no Ticket 
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@POST(endpoint="/CriaMensagem",description="Serviço REST para inclusão de mensagens no Ticket")
+User Function CriaMensagem
+	Local lRet         := .T.
+	Local oObj1
+	Local nZ3C      := 0
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3A"
+	Local cAliasWSC  := "Z3C"
+	Local cID
+	Local cPara     := ""
+	Local cCC       := ""
+	Local cAssunto  := ""
+	Local cMensagem  := ""
+	Local cStatus    := ""
+	Local cTipo      := ""
+	Local cDownTown  := ""
+	Local cPriory    := ""
+
+	Private _lRet   := .T.
+
+	cMensagem += " <!DOCTYPE html>"
+	cMensagem += " <html>"
+	cMensagem += " <head>"
+	cMensagem += " <style>"
+	cMensagem += " body { font-family: 'Segoe UI', sans-serif; background-color: #f2f2f2; padding: 20px; color: #333; }"
+	cMensagem += " .container { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 6px rgba(0,0,0,0.1); }"
+	cMensagem += " h2 { color: #2c3e50; margin-bottom: 20px; }"
+	cMensagem += " table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }"
+	cMensagem += " th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; vertical-align: top; }"
+	cMensagem += " th { background-color: #e8f0fe; font-weight: 600; }"
+	cMensagem += " tr:nth-child(even) { background-color: #f9f9f9; }"
+	cMensagem += " </style>"
+	cMensagem += " </head>"
+	cMensagem += " <body>"
+	cMensagem += "     <div class='container'>"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		(cAliasWS)->(dbSetOrder(1))
+		Begin Transaction
+			For nZ3C := 1 To Len(oObj1:messages)
+				cID         := GetSxeNum(cAliasWSC,"Z3C_ID")
+				If !(cAliasWS)->(DbSeek(FwxFilial(cAliasWS)+PadR(oObj1:messages[nZ3C]:ticketId, TamSX3("Z3A_ID")[1],' ')))
+					RollbackSx8()
+					DisarmTransaction()
+					oRest:setStatusCode(400)
+					oJson['code']        := "400"
+					oJson['error']    := 'Ticket nao encontrado.'
+					oJson['solution'] := 'Enviar metodo post do ticket para criar ticket.'
+					//Define o retorno
+					oRest:setHeaderResponse(jHeaders)
+					oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+					Return(lRet)
+				Else
+
+					If RecLock(cAliasWSC, .T.)
+						(cAliasWSC)->Z3C_FILIAL := oObj1:messages[nZ3C]:branch
+						(cAliasWSC)->Z3C_ID     := cID
+						(cAliasWSC)->Z3C_IDTICK := oObj1:messages[nZ3C]:ticketId
+						(cAliasWSC)->Z3C_MENSAG := oObj1:messages[nZ3C]:content
+						(cAliasWSC)->Z3C_DESTIN := oObj1:messages[nZ3C]:to
+						(cAliasWSC)->Z3C_REMETE := oObj1:messages[nZ3C]:from
+						(cAliasWSC)->Z3C_DATA   := CtoD(oObj1:messages[nZ3C]:date)
+						(cAliasWSC)->Z3C_HORA   := oObj1:messages[nZ3C]:time
+						(cAliasWSC)->Z3C_STATUS := oObj1:messages[nZ3C]:status
+						(cAliasWSC)->Z3C_PRIVAD := oObj1:messages[nZ3C]:isMessagePrivate
+						ConfirmSx8()
+						(cAliasWSC)->(MsUnlock())
+
+						Do Case
+
+						Case RTrim((cAliasWSC)->Z3C_STATUS) == '0'
+							cStatus := 'Novo'
+						Case RTrim((cAliasWSC)->Z3C_STATUS) == '1'
+							cStatus := 'Aberto'
+						Case RTrim((cAliasWSC)->Z3C_STATUS) == '2'
+							cStatus := 'Pendente'
+						Case RTrim((cAliasWSC)->Z3C_STATUS) == '3'
+							cStatus := 'Em Espera'
+						Case RTrim((cAliasWSC)->Z3C_STATUS) == '4'
+							cStatus := 'Resolvido'
+						Case RTrim((cAliasWSC)->Z3C_STATUS) == '5'
+							cStatus := 'Fechado'
+						endCase
+
+						Do Case
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '1'
+							cTipo := 'Pergunta'
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '2'
+							cTipo := 'Incidente'
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '3'
+							cTipo := 'Problema'
+						Case RTrim((cAliasWS)->Z3A_TIPO) == '4'
+							cTipo := 'Tarefa'
+						endCase
+
+						Do Case
+						Case RTrim((cAliasWS)->Z3A_INDISP) == '1'
+							cDownTown := 'N/A'
+						Case RTrim((cAliasWS)->Z3A_INDISP) == '2'
+							cDownTown := 'Parcial'
+						Case RTrim((cAliasWS)->Z3A_INDISP) == '3'
+							cDownTown := 'Total'
+						EndCase
+
+						Do Case
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '1'
+							cPriory := 'Consulta'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '2'
+							cPriory := 'Baixa'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '3'
+							cPriory := 'Media'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '4'
+							cPriory := 'Alta'
+						Case RTrim((cAliasWS)->Z3A_PRIORI) == '5'
+							cPriory := 'Critica'
+						EndCase
+
+						cAssunto  := "Ticket: " + (cAliasWS)->Z3A_FILIAL+(cAliasWS)->Z3A_ID
+						If nZ3C == 1
+							cMensagem += '     <p style="text-align:center;"><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<--- Não escrever abaixo dessa linha --->>>>>>>>>>>>>>>>>>>>>>>>>>>>>></p>'
+							cMensagem += "         <h2>Ticket #" + RTrim((cAliasWS)->Z3A_FILIAL)+RTrim((cAliasWS)->Z3A_ID) + "</h2>"
+							cMensagem += "         <table>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>ID</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_ID) + "</td>"
+							cMensagem += "                 <th>Email</th>"
+							cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_CC) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Assunto</th>"
+							cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_ASSUNT) + "</td>"
+							cMensagem += "                 <th>Localidade</th>"
+							cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_LOCALI) + "</td>"
+							cMensagem += "                 <th>Criticidade</th>"
+							cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_CRITIC) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Tipo</th>"
+							cMensagem += "                 <td>" +  cTipo + "</td>"
+							cMensagem += "                 <th>Status</th>"
+							cMensagem += "                 <td>" + cStatus + "</td>"
+							cMensagem += "                 <th>Prioridade</th>"
+							cMensagem += "                 <td>" + cPriory + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Data</th>"
+							cMensagem += "                 <td>" + DtoC((cAliasWS)->Z3A_DATA) + "</td>"
+							cMensagem += "                 <th>Hora</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_HORA) + "</td>"
+							cMensagem += "                 <th>Downtime</th>"
+							cMensagem += "                 <td>" + cDownTown + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Equipamento</th>"
+							cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_EQUIP) + "</td>"
+							cMensagem += "                 <th>Protocolo</th>"
+							cMensagem += "                 <td colspan='2'>" + RTrim((cAliasWS)->Z3A_PROTOC) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Operador</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_OPERAT) + "</td>"
+							cMensagem += "                 <th>Solicitante</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_IDUSER) + "</td>"
+							cMensagem += "                 <th>Organização</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_IDORG) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>SLA</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_SLA) + "</td>"
+							cMensagem += "                 <th>Contato</th>"
+							cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_CONTAT) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Nome Completo</th>"
+							cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_COMNAM) + "</td>"
+							cMensagem += "                 <th>Última Atividade</th>"
+							cMensagem += "                 <td>" + DtoC((cAliasWS)->Z3A_ULTATI) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Responsável</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_ATRIBU) + "</td>"
+							cMensagem += "                 <th>Tipo de Serviço</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_TPATEN) + "</td>"
+							cMensagem += "                 <th>Líder Técnico</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_TECHLI) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "             <tr>"
+							cMensagem += "                 <th>Grupo</th>"
+							cMensagem += "                 <td>" + RTrim((cAliasWS)->Z3A_GRUPO) + "</td>"
+							cMensagem += "                 <th>Tipo Tecnologia</th>"
+							cMensagem += "                 <td colspan='3'>" + RTrim((cAliasWS)->Z3A_TPTECH) + "</td>"
+							cMensagem += "             </tr>"
+							cMensagem += "         </table>"
+							cMensagem += "     </div>"
+
+							cCC += IIF(Empty(RTrim((cAliasWS)->Z3A_CC)), RTrim((cAliasWS)->Z3A_CC), ";"+RTrim((cAliasWS)->Z3A_CC))
+							cPara += cCC
+
+							cMensagem += " <div class='container'>"
+							cMensagem += " <table>"
+							cMensagem += " <tr>"
+							cMensagem += " <th>Data</th>"
+							cMensagem += " <th>Hora</th>"
+							cMensagem += " <th>Status</th>"
+							cMensagem += " <th>Destinatario</th>"
+							cMensagem += " <th>Remetente</th>"
+							cMensagem += " <th colspan='10'>Mensagem</th>"
+							cMensagem += " </tr>"
+						EndIf
+
+						DbSelectArea(cAliasWSC)
+						(cAliasWSC)->(DbSetOrder(2))
+						If (cAliasWSC)->(dbSeek(FWxFilial(cAliasWSC)+(cAliasWS)->Z3A_ID))
+							While !(cAliasWSC)->(EoF()) .And. (cAliasWSC)->Z3C_IDTICK == (cAliasWS)->Z3A_ID
+
+								Do Case
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '0'
+									cStatus := 'Novo'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '1'
+									cStatus := 'Aberto'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '2'
+									cStatus := 'Pendente'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '3'
+									cStatus := 'Em Espera'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '4'
+									cStatus := 'Resolvido'
+								Case RTrim((cAliasWSC)->Z3C_STATUS) == '5'
+									cStatus := 'Fechado'
+								endCase
+
+								If RTrim((cAliasWSC)->Z3C_PRIVAD) == "0"
+									cMensagem += " <tr>"
+									cMensagem += " <td>" +  dToC((cAliasWSC)->Z3C_DATA)     + "</td>"
+									cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_HORA)     + "</td>"
+									cMensagem += " <td>" + cStatus                          + "</td>"
+									cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_DESTIN)   + "</td>"
+									cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_REMETE)   + "</td>"
+									cMensagem += " <td>" + RTrim((cAliasWSC)->Z3C_MENSAG)   + "</td>"
+									cMensagem += " </tr>"
+								EndIf
+
+								If !RTrim((cAliasWSC)->Z3C_DESTIN) $ cPara
+									cPara += IIF(Empty(cPara), RTrim((cAliasWSC)->Z3C_DESTIN), ";"+RTrim((cAliasWSC)->Z3C_DESTIN))
+								EndIf
+
+								(cAliasWSC)->(DBSkip())
+							EndDo
+						EndIf
+
+					Else
+						RollbackSx8()
+						DisarmTransaction()
+						oRest:setStatusCode(400)
+						oJson['code']        := "400"
+						oJson['error']    := 'Erro em inclusao de mensagem no Ticket ID: '+ oObj1:messages[nZ3C]:ticketId
+						oJson['solution'] := 'Contate o administrador do sistema'
+						//Define o retorno
+						oRest:setHeaderResponse(jHeaders)
+						oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+						Return(lRet)
+					EndIf
+				EndIf
+				oJson['message']  := 'Inclusao de mensagem com sucesso do Ticket ID: '+ oObj1:messages[nZ3C]:ticketId
+				oJson['TicketId'] := oObj1:messages[nZ3C]:ticketId
+
+			Next nZ3C
+			cMensagem += " </table>"
+			cMensagem += " </div>"
+			cMensagem += " </body>"
+			cMensagem += " </html>"
+			cMensagem += " "
+
+			EnviaEmail(cPara, cAssunto, cMensagem, , , 2)
+		End Transaction
+	EndIf
+//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET ListaArtigo
+Retorna lista de Artigo 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaArtigo",description="Serviço REST para retornar lista de Artigo ")
+User Function ListaArtigo
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3E := JsonObject():New()
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3E"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["artigo"] := JsonObject():New()
+	oJson["artigo"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+	While !(cAliasWS)->(EoF())
+		oJsonZ3E := JsonObject():New()
+		oJsonZ3E["branch"]     := RTrim((cAliasWS)->Z3E_FILIAL)
+		oJsonZ3E["id"]        := RTrim((cAliasWS)->Z3E_ID)
+		oJsonZ3E["name"]       := RTrim((cAliasWS)->Z3E_NAME)
+		aAdd(oJson["artigo"], oJsonZ3E)
+		(cAliasWS)->(DBSkip())
+	EndDo
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc}  GET TICKET
+Retorna registro via ArtigoID
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+	@GET(endpoint="/artigo",description="Serviço REST para retornar Artigo filtrado pelo ArtigoID" )
+User Function artigo
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local JParam   := oRest:getQueryRequest()
+	Local ArtigoID := IIf(Empty(JParam[ 'ArtigoID' ]), "", JParam[ 'ArtigoID' ])
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3E"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	//Se o ArtigoID estiver vazio
+	If Empty(ArtigoID)
+		//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'ID vazio'
+		oJson['solution'] := 'Informe o ID'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		DbSelectArea(cAliasWS)
+		(cAliasWS)->(DbSetOrder(1))
+
+		//Se nao encontrar o registro
+		If ! (cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + ArtigoID))
+			//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['errorId']  := ArtigoID
+			oJson['error']    := 'ID nao encontrado'
+			oJson['solution'] := 'Verifique se o ID existe no cadastro da tabela ' + cAliasWS
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			oJson["branch"]   := RTrim((cAliasWS)->Z3E_FILIAL)
+			oJson["id"]       := RTrim((cAliasWS)->Z3E_ID)
+			oJson["name"]     := RTrim((cAliasWS)->Z3E_NAME)
+			oJson["content"]  := RTrim((cAliasWS)->Z3E_CONTEN)
+
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Post TICKET
+Inserção de novo Artigo
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@POST(endpoint="/CriaArtigo",description= "Serviço REST para inclusao de Artigo" )
+User Function CriaArtigo
+	Local lRet         := .T.
+	Local oObj1
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3E"
+	Local cId          := GetSxeNum("Z3E","Z3E_ID")
+
+	Private _lRet   := .T.
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		(cAliasWS)->(dbSetOrder(1))
+		Begin Transaction
+
+			If RecLock(cAliasWS, .T.) //.T. Incluir / .F. Alterar
+				(cAliasWS)->Z3E_FILIAL := oObj1:branch               // - 01 Filial
+				(cAliasWS)->Z3E_ID     := cId                         // - 02 ID do Artigo
+				(cAliasWS)->Z3E_NAME   := oObj1:name                 // - 03 Nome Artigo
+				(cAliasWS)->Z3E_CONTEN := oObj1:content              // - 04 Conteudo Artigo
+				ConfirmSx8()
+			Else
+				RollbackSx8()
+				DisarmTransaction()
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['error']    := 'Erro em inclusao de Artigo"
+				oJson['solution'] := 'Contate o administrador do sistema'
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			EndIf
+			oJson['message']    := 'Inclusao com sucesso do Artigo ID: '+ cId
+		End Transaction
+	EndIf
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} GET ListaOrganizacao
+Retorna lista de organizacao 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaOrganizacao",description="Serviço REST para retornar lista de Organizacoes ")
+User Function ListaOrganizacao
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3H := JsonObject():New()
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3H"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["organizacao"] := JsonObject():New()
+	oJson["organizacao"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+	While !(cAliasWS)->(EoF())
+		oJsonZ3H := JsonObject():New()
+		oJsonZ3H["branch"       ]:= RTrim((cAliasWS)->Z3H_FILIAL)
+		oJsonZ3H["id"           ]:= RTrim((cAliasWS)->Z3H_ID    )
+		oJsonZ3H["name"         ]:= RTrim((cAliasWS)->Z3H_NOME  )
+		aAdd(oJson["organizacao"], oJsonZ3H)
+		(cAliasWS)->(DBSkip())
+	EndDo
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET Organizacao
+Retorna Organizacao 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/Organizacao",description="Serviço REST para retornar lista de Organizacao ")
+User Function Organizacao
+	Local lRet             := .T.
+	Local oJson            := JsonObject():New()
+	Local oJsonZ3H         := JsonObject():New()
+	Local JParam           := oRest:getQueryRequest()
+	Local cOrgID         := IIf(Empty(JParam[ 'id' ]), "", JParam[ 'id' ])
+	Local jHeaders
+	Local cHeader          := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS         := "Z3H"
+	Local nCountTicket  := 0
+	Local aRetTickets   := {}
+	Local nCountUsers   := 0
+	Local aRetUsers        := {}
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["organizacao"] := JsonObject():New()
+	oJson["organizacao"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+
+	//Se o OrganID estiver vazios
+	If Empty(cOrgID)
+		//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'OrganID ou OrgStore vazio'
+		oJson['solution'] := 'Informe o OrganID ou OrgStore'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		DbSelectArea(cAliasWS)
+		(cAliasWS)->(DbSetOrder(1))
+
+		//Se nao encontrar o registro
+		If ! (cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + cOrgID ))
+			//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['errorOrganID']  := cOrgID
+			oJson['errorOrgStore'] := cOrgStore
+			oJson['error']    := 'OrganID ou OrgStore nao encontrado'
+			oJson['solution'] := 'Verifique se o OrganID ou OrgStore existe no cadastro da tabela ' + cAliasWS
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			oJsonZ3H := JsonObject():New()
+			oJsonZ3H["branch"       ]:= RTrim((cAliasWS)->Z3H_FILIAL)
+			oJsonZ3H["id"           ]:= RTrim((cAliasWS)->Z3H_ID    )
+			oJsonZ3H["name"         ]:= RTrim((cAliasWS)->Z3H_NOME  )
+			oJsonZ3H["domains"      ]:= RTrim((cAliasWS)->Z3H_DOMAIN)
+			oJsonZ3H["group"        ]:= RTrim((cAliasWS)->Z3H_GROUP )
+			oJsonZ3H["details"      ]:= RTrim((cAliasWS)->Z3H_DETAIL)
+			oJsonZ3H["observations" ]:= RTrim((cAliasWS)->Z3H_OBSERV)
+			oJsonZ3H["creationDate" ]:= DtoC((cAliasWS)->Z3H_CREATI)
+			oJsonZ3H["atualization" ]:= DtoC((cAliasWS)->Z3H_ATUALI)
+			oJsonZ3H["cnpjCpf"      ]:= RTrim((cAliasWS)->Z3H_CGCCPF)
+			oJsonZ3H["technicalLea" ]:= RTrim((cAliasWS)->Z3H_TECHLE)
+			oJsonZ3H["contractNumb" ]:= RTrim((cAliasWS)->Z3H_CONTRA)
+			oJsonZ3H["projectManag" ]:= RTrim((cAliasWS)->Z3H_PROJEC)
+			oJsonZ3H["account"      ]:= RTrim((cAliasWS)->Z3H_ACCOUN)
+			oJsonZ3H["serviceForma" ]:= RTrim((cAliasWS)->Z3H_SERFOR)
+			oJsonZ3H["contractCove" ]:= RTrim((cAliasWS)->Z3H_CONTCO)
+			oJsonZ3H["validityDate" ]:= DtoC((cAliasWS)->Z3H_VALDAT)
+			oJsonZ3H["resident"     ]:= RTrim((cAliasWS)->Z3H_RESIDE)
+			oJsonZ3H["product"      ]:= RTrim((cAliasWS)->Z3H_PRODUC)
+			oJsonZ3H["equipement"   ]:= RTrim((cAliasWS)->Z3H_EQUIPM)
+			oJsonZ3H["operator"     ]:= RTrim((cAliasWS)->Z3H_OPERAT)
+			oJsonZ3H["contractNote" ]:= RTrim((cAliasWS)->Z3H_CONNOT)
+			oJsonZ3H["client"       ]:= RTrim((cAliasWS)->Z3H_CLIENT)
+			oJsonZ3H["store"        ]:= RTrim((cAliasWS)->Z3H_LOJA  )
+			oJsonZ3H["tickets"         ] := JsonObject():New()
+			oJsonZ3H["tickets"         ] := {}
+
+			aRetTickets := ListaItens((cAliasWS)->Z3H_ID, 1)
+			If Len(aRetTickets) > 0
+				For nCountTicket := 1 TO Len (aRetTickets)
+					oJsonTicket :=  JsonObject():New()
+					oJsonTicket["Ticket"] := aRetTickets[nCountTicket]
+					aAdd(oJsonZ3H["tickets"], oJsonTicket)
+				Next nCountTicket
+			EndIf
+
+			oJsonZ3H["users"         ] := JsonObject():New()
+			oJsonZ3H["users"         ] := {}
+
+			aRetUsers := ListaItens((cAliasWS)->Z3H_GROUP, 3)
+			If Len(aRetUsers) > 0
+				For nCountUsers := 1 TO Len (aRetUsers)
+					oJsonUsers :=  JsonObject():New()
+					oJsonUsers["users"] := aRetUsers[nCountUsers]
+					aAdd(oJsonZ3H["users"], oJsonUsers)
+				Next nCountTicket
+			EndIf
+
+			aAdd(oJson["organizacao"], oJsonZ3H)
+			(cAliasWS)->(DBSkip())
+		EndIf
+	EndIF
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Post Organizacao
+Inserção de novo Organizacao
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@POST(endpoint="/CriaOrganizacao",description= "Serviço REST para inclusao de Organizacao" )
+User Function CriaOrganizacao
+	Local lRet       := .T.
+	Local oObj1
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3H"
+	Local cID         := GetSxeNum(cAliasWS,"Z3H_ID")
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		(cAliasWS)->(dbSetOrder(1))
+		Begin Transaction
+			If RecLock(cAliasWS, .T.) //.T. Incluir / .F. Alterar
+				(cAliasWS)->Z3H_FILIAL := oObj1:branch
+				(cAliasWS)->Z3H_ID     := cID
+				(cAliasWS)->Z3H_NOME   := oObj1:name
+				(cAliasWS)->Z3H_DOMAIN := oObj1:domains
+				(cAliasWS)->Z3H_GROUP  := oObj1:group
+				(cAliasWS)->Z3H_DETAIL := oObj1:details
+				(cAliasWS)->Z3H_OBSERV := oObj1:observations
+				(cAliasWS)->Z3H_CREATI := CtoD(oObj1:creationDate)
+				(cAliasWS)->Z3H_ATUALI := CtoD(oObj1:atualization)
+				(cAliasWS)->Z3H_CGCCPF := oObj1:cnpjCpf
+				(cAliasWS)->Z3H_TECHLE := oObj1:technicalLea
+				(cAliasWS)->Z3H_CONTRA := oObj1:contractNumb
+				(cAliasWS)->Z3H_PROJEC := oObj1:projectManag
+				(cAliasWS)->Z3H_ACCOUN := oObj1:account
+				(cAliasWS)->Z3H_SERFOR := oObj1:serviceForma
+				(cAliasWS)->Z3H_CONTCO := oObj1:contractCove
+				(cAliasWS)->Z3H_VALDAT := CtoD(oObj1:validityDate)
+				(cAliasWS)->Z3H_RESIDE := oObj1:resident
+				(cAliasWS)->Z3H_PRODUC := oObj1:product
+				(cAliasWS)->Z3H_EQUIPM := oObj1:equipement
+				(cAliasWS)->Z3H_OPERAT := oObj1:operator
+				(cAliasWS)->Z3H_CONNOT := oObj1:contractNote
+				(cAliasWS)->Z3H_CLIENT := oObj1:client
+				(cAliasWS)->Z3H_LOJA   := oObj1:store
+				ConfirmSx8()
+				(cAliasWS)->(MsUnlock())
+			Else
+				RollbackSx8()
+				DisarmTransaction()
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['error']    := 'Erro em inclusao de Organizacao: '+ cID
+				oJson['solution'] := 'Contate o administrador do sistema'
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			EndIf
+			oJson['message']    := 'Inclusao com sucesso de Organizacao: '+ cID
+
+		End Transaction
+	EndIf
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} Post Organizacao
+Inserção de novo Organizacao
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@PUT(endpoint="/AlteraOrganizacao",description= "Serviço REST para alteracao de Organizacao" )
+User Function AlteraOrganizacao
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oObj1
+	Local JParam   := oRest:getQueryRequest()
+	Local cID := IIf(Empty(JParam[ 'id' ]), "", JParam[ 'id' ])
+	Local cJSon       := oRest:getBodyRequest() as character
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3H"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Se o TicketID estiver vazio
+		If Empty(cID)
+			//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['error']    := 'User vazio'
+			oJson['solution'] := 'Informe a organizacao'
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			DbSelectArea(cAliasWS)
+			(cAliasWS)->(DbSetOrder(1))
+
+			//Se nao encontrar o registro
+			If !(cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + cID))
+				//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['errorId']  := cID
+				oJson['error']    := 'Organizacao nao encontrada'
+				oJson['solution'] := 'Verifique se a organizacao existe no cadastro da tabela ' + cAliasWS
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			Else
+				//Deserializa a string JSON
+				FWJsonDeserialize(cJson, @oObj1)
+				Begin Transaction
+					While !(cAliasWS)->(Eof()) .And. (cAliasWS)->Z3H_ID == cID
+						If RecLock(cAliasWS, .F.) //.T. Incluir / .F. Alterar
+							(cAliasWS)->Z3H_FILIAL := oObj1:branch
+							(cAliasWS)->Z3H_NOME   := oObj1:name
+							(cAliasWS)->Z3H_DOMAIN := oObj1:domains
+							(cAliasWS)->Z3H_GROUP  := oObj1:group
+							(cAliasWS)->Z3H_DETAIL := oObj1:details
+							(cAliasWS)->Z3H_OBSERV := oObj1:observations
+							(cAliasWS)->Z3H_CREATI := CtoD(oObj1:creationDate)
+							(cAliasWS)->Z3H_ATUALI := CtoD(oObj1:atualization)
+							(cAliasWS)->Z3H_CGCCPF := oObj1:cnpjCpf
+							(cAliasWS)->Z3H_TECHLE := oObj1:technicalLea
+							(cAliasWS)->Z3H_CONTRA := oObj1:contractNumb
+							(cAliasWS)->Z3H_PROJEC := oObj1:projectManag
+							(cAliasWS)->Z3H_ACCOUN := oObj1:account
+							(cAliasWS)->Z3H_SERFOR := oObj1:serviceForma
+							(cAliasWS)->Z3H_CONTCO := oObj1:contractCove
+							(cAliasWS)->Z3H_VALDAT := CtoD(oObj1:validityDate)
+							(cAliasWS)->Z3H_RESIDE := oObj1:resident
+							(cAliasWS)->Z3H_PRODUC := oObj1:product
+							(cAliasWS)->Z3H_EQUIPM := oObj1:equipement
+							(cAliasWS)->Z3H_OPERAT := oObj1:operator
+							(cAliasWS)->Z3H_CONNOT := oObj1:contractNote
+							(cAliasWS)->Z3H_CLIENT := oObj1:client
+							(cAliasWS)->Z3H_LOJA   := oObj1:store
+							(cAliasWS)->(MsUnlock())
+							oJson['user']  := cID
+							oJson['Message']   := 'Pass do user alterado com Sucesso'
+						Else
+							DisarmTransaction()
+							oRest:setStatusCode(400)
+							oJson['code']        := "400"
+							oJson['errorId']  := cID
+							oJson['error']    := 'Erro no reclock do registro para alteracao'
+							oJson['solution'] := 'Json Esta em branco'
+							//Define o retorno
+							oRest:setHeaderResponse(jHeaders)
+							oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+							Return(lRet)
+						EndIf
+						(cAliasWS)->(DBSkip())
+					EndDo
+				End Transaction
+			EndIf
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} GET ListaGrupos
+Retorna lista de grupos 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaGrupos",description="Serviço REST para retornar lista de Grupos ")
+User Function ListaGrupos
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3G := JsonObject():New()
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3G"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["grupos"] := JsonObject():New()
+	oJson["grupos"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+	While !(cAliasWS)->(EoF())
+		oJsonZ3G := JsonObject():New()
+		oJsonZ3G["branch"]         := RTrim((cAliasWS)->Z3G_FILIAL)
+		oJsonZ3G["group"]        := RTrim((cAliasWS)->Z3G_GROUP)
+		oJsonZ3G["user"]        := RTrim((cAliasWS)->Z3G_USERS)
+		oJsonZ3G["description"]    := RTrim((cAliasWS)->Z3G_DESCRI)
+		aAdd(oJson["grupos"], oJsonZ3G)
+		(cAliasWS)->(DBSkip())
+	EndDo
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET Grupos
+Retorna Grupos 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/Grupos",description="Serviço REST para retornar lista de Grupos ")
+User Function Grupos
+	Local lRet             := .T.
+	Local oJson            := JsonObject():New()
+	Local oJsonZ3G         := JsonObject():New()
+	Local JParam           := oRest:getQueryRequest()
+	Local cGrupo         := IIf(Empty(JParam[ 'group' ]), "", JParam[ 'group' ])
+	Local jHeaders
+	Local cHeader          := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS         := "Z3G"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["grupos"] := JsonObject():New()
+	oJson["grupos"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+
+	//Se o Grupo estiverem vazios
+	If Empty(cGrupo)
+		//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Grupo vazio'
+		oJson['solution'] := 'Informe o Grupo'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		DbSelectArea(cAliasWS)
+		(cAliasWS)->(DbSetOrder(1))
+
+		//Se nao encontrar o registro
+		If ! (cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + cGrupo ))
+			//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['errorGrupo']  := cGrupo
+			oJson['error']    := 'Grupo nao encontrado'
+			oJson['solution'] := 'Verifique se o Grupo existe no cadastro da tabela ' + cAliasWS
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			While !(cAliasWS)->(EoF()) .And. (cAliasWS)->Z3G_GROUP == cGrupo
+				oJsonZ3G := JsonObject():New()
+				oJsonZ3G["branch"]         := RTrim((cAliasWS)->Z3G_FILIAL)
+				oJsonZ3G["group"]        := RTrim((cAliasWS)->Z3G_GROUP)
+				oJsonZ3G["user"]        := RTrim((cAliasWS)->Z3G_USERS)
+				oJsonZ3G["description"]    := RTrim((cAliasWS)->Z3G_DESCRI)
+				aAdd(oJson["grupos"], oJsonZ3G)
+				(cAliasWS)->(DBSkip())
+			EndDo
+		EndIf
+	EndIF
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Post Grupo
+Inserção de novo Grupo
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@POST(endpoint="/CriaGrupo",description= "Serviço REST para inclusao de Grupo" )
+User Function CriaGrupo
+	Local lRet         := .T.
+	Local oObj1
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3G"
+
+	Private _lRet   := .T.
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		(cAliasWS)->(dbSetOrder(1))
+		Begin Transaction
+			If RecLock(cAliasWS, .T.) //.T. Incluir / .F. Alterar
+				(cAliasWS)->Z3G_FILIAL     := oObj1:branch
+				(cAliasWS)->Z3G_GROUP     := oObj1:group
+				(cAliasWS)->Z3G_USERS     := oObj1:user
+				(cAliasWS)->Z3G_DESCRI     := oObj1:description
+				(cAliasWS)->(MsUnlock())
+			Else
+				DisarmTransaction()
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['error']    := 'Erro em inclusao de Grupo: '+ oObj1:group
+				oJson['solution'] := 'Contate o administrador do sistema'
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			EndIf
+			oJson['message']    := 'Inclusao com sucesso do Grupo: '+ oObj1:group
+
+		End Transaction
+	EndIf
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} GET ListaUsers
+Retorna lista de users 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaUsers",description="Serviço REST para retornar lista de Users ")
+User Function ListaUsers
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oJsonZ3F := JsonObject():New()
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3F"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["users"] := JsonObject():New()
+	oJson["users"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+	While !(cAliasWS)->(EoF())
+		oJsonZ3F := JsonObject():New()
+		oJsonZ3F["Filial"       ]:= RTrim((cAliasWS)->Z3F_FILIAL)
+		oJsonZ3F["id"           ]:= RTrim((cAliasWS)->Z3F_ID)
+		oJsonZ3F["photo"        ]:= RTrim((cAliasWS)->Z3F_PHOTO)
+		oJsonZ3F["name"         ]:= RTrim((cAliasWS)->Z3F_NAME)
+		oJsonZ3F["email"        ]:= RTrim((cAliasWS)->Z3F_EMAIL)
+		oJsonZ3F["registerDate" ]:= DtoC((cAliasWS)->Z3F_REGDAT)
+		oJsonZ3F["pass"         ]:= RTrim((cAliasWS)->Z3F_PASS)
+		oJsonZ3F["organization" ]:= RTrim((cAliasWS)->Z3F_ORGANI)
+		aAdd(oJson["users"], oJsonZ3F)
+		(cAliasWS)->(DBSkip())
+	EndDo
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET Users
+Retorna Users 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/Users",description="Serviço REST para retornar lista de Users ")
+User Function Users
+	Local lRet             := .T.
+	Local oJson            := JsonObject():New()
+	Local oJsonZ3F         := JsonObject():New()
+	Local JParam           := oRest:getQueryRequest()
+	Local cUser         := IIf(Empty(JParam[ 'user' ]), "", JParam[ 'user' ])
+	Local jHeaders
+	Local cHeader          := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS         := "Z3F"
+	Local nCountTicket  := 0
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["users"] := JsonObject():New()
+	oJson["users"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+
+	//Se o User estiverem vazios
+	If Empty(cUser)
+		//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'User vazio'
+		oJson['solution'] := 'Informe o User'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		DbSelectArea(cAliasWS)
+		(cAliasWS)->(DbSetOrder(1))
+
+		//Se nao encontrar o registro
+		If ! (cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + cUser ))
+			//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['errorUser']  := cUser
+			oJson['error']    := 'User nao encontrado'
+			oJson['solution'] := 'Verifique se o User existe no cadastro da tabela ' + cAliasWS
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			While !(cAliasWS)->(EoF()) .And. (cAliasWS)->Z3F_ID == cUser
+				oJsonZ3F := JsonObject():New()
+				oJsonZ3F["Filial"       ]:= RTrim((cAliasWS)->Z3F_FILIAL)
+				oJsonZ3F["id"           ]:= RTrim((cAliasWS)->Z3F_ID)
+				oJsonZ3F["userType"     ]:= RTrim((cAliasWS)->Z3F_TYPE)
+				oJsonZ3F["access"       ]:= RTrim((cAliasWS)->Z3F_ACCESS)
+				oJsonZ3F["email"        ]:= RTrim((cAliasWS)->Z3F_EMAIL)
+				oJsonZ3F["tags"         ]:= RTrim((cAliasWS)->Z3F_TAGS)
+				oJsonZ3F["organization" ]:= RTrim((cAliasWS)->Z3F_ORGANI)
+				oJsonZ3F["timezone"     ]:= RTrim((cAliasWS)->Z3F_TIMEZO)
+				oJsonZ3F["details"      ]:= RTrim((cAliasWS)->Z3F_DETAIL)
+				oJsonZ3F["observations" ]:= RTrim((cAliasWS)->Z3F_OBSERV)
+				oJsonZ3F["pass"         ]:= RTrim((cAliasWS)->Z3F_PASS)
+				oJsonZ3F["tickets"      ] := {}
+
+				aRetTickets := ListaItens((cAliasWS)->Z3F_ID, 2)
+
+				If Len(aRetTickets) > 0
+					For nCountTicket := 1 TO Len (aRetTickets)
+						oJsonTicket :=  JsonObject():New()
+						oJsonTicket["Ticket"] := aRetTickets[nCountTicket]
+						aAdd(oJsonZ3F["tickets"], oJsonTicket)
+					Next nCountTicket
+				EndIf
+				aAdd(oJson["users"], oJsonZ3F)
+				(cAliasWS)->(DBSkip())
+			EndDo
+		EndIf
+	EndIF
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Post User
+Inserção de novo User
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@POST(endpoint="/CriaUser",description= "Serviço REST para inclusao de User" )
+User Function CriaUser
+	Local lRet         := .T.
+	Local oObj1
+	Local cJSon     := oRest:getBodyRequest() as character
+	Local oJson        := JsonObject():New()
+	Local jHeaders
+	Local cHeader   := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS  := "Z3F"
+	Local cID         := GetSxeNum(cAliasWS,"Z3F_ID")
+	Local cAssunto    := "Boas-vindas! Seu acesso no sistema de chamados já está liberado!!!"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Deserializa a string JSON
+		FWJsonDeserialize(cJson, @oObj1)
+		//Valida se foi enviado o atributo
+		(cAliasWS)->(dbSetOrder(1))
+		Begin Transaction
+			If RecLock(cAliasWS, .T.) //.T. Incluir / .F. Alterar
+				(cAliasWS)->Z3F_FILIAL := oObj1:branch
+				(cAliasWS)->Z3F_ID     := cID
+				(cAliasWS)->Z3F_PHOTO  := oObj1:photo
+				(cAliasWS)->Z3F_NAME   := oObj1:name
+				(cAliasWS)->Z3F_EMAIL  := oObj1:email
+				(cAliasWS)->Z3F_REGDAT := CtoD(oObj1:registerDate)
+				(cAliasWS)->Z3F_TYPE   := oObj1:userType
+				(cAliasWS)->Z3F_ACCESS := oObj1:access
+				(cAliasWS)->Z3F_TAGS   := oObj1:tags
+				(cAliasWS)->Z3F_TIMEZO := oObj1:timezone
+				(cAliasWS)->Z3F_DETAIL := oObj1:details
+				(cAliasWS)->Z3F_ORGANI := oObj1:organization
+				(cAliasWS)->Z3F_OBSERV := oObj1:observations
+				(cAliasWS)->Z3F_PASS   := oObj1:pass
+				ConfirmSx8()
+				(cAliasWS)->(MsUnlock())
+
+				EnviaEmail(oObj1:email, cAssunto, , , , ,1) //(cPara, cAssunto, cMensagem, aAnexos, lMostraLog, lUsaTLS, nTipoMsg
+			Else
+				RollbackSx8()
+				DisarmTransaction()
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['error']    := 'Erro em inclusao de User: '+ cID
+				oJson['solution'] := 'Contate o administrador do sistema'
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			EndIf
+			oJson['message']    := 'Inclusao com sucesso do User: '+ cID
+
+		End Transaction
+	EndIf
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return(lRet)
+
+/*/{Protheus.doc} Put Users
+Alteração de senha User
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@PUT(endpoint="/AlteraPassUsers",description="Serviço REST para alterar pass de Users ")
+User Function AlteraPassUsers
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oObj1
+	Local JParam   := oRest:getQueryRequest()
+	Local cUser := IIf(Empty(JParam[ 'user' ]), "", JParam[ 'user' ])
+	Local cJSon       := oRest:getBodyRequest() as character
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3F"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Se o TicketID estiver vazio
+		If Empty(cUser)
+			//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['error']    := 'User vazio'
+			oJson['solution'] := 'Informe o User'
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			DbSelectArea(cAliasWS)
+			(cAliasWS)->(DbSetOrder(1))
+
+			//Se nao encontrar o registro
+			If !(cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + cUser))
+				//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['errorId']  := cUser
+				oJson['error']    := 'User nao encontrado'
+				oJson['solution'] := 'Verifique se o User existe no cadastro da tabela ' + cAliasWS
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			Else
+				//Deserializa a string JSON
+				FWJsonDeserialize(cJson, @oObj1)
+				Begin Transaction
+					While !(cAliasWS)->(Eof()) .And. (cAliasWS)->Z3F_ID == cUser
+						If RecLock(cAliasWS, .F.) //.T. Incluir / .F. Alterar
+							(cAliasWS)->Z3F_PASS  := iIf(!Empty(oObj1:pass), oObj1:pass, (cAliasWS)->Z3F_PASS  )   // - 01 Tp Ticket
+							(cAliasWS)->(MsUnlock())
+							oJson['user']  := cUser
+							oJson['Message']   := 'user alterado com Sucesso'
+						Else
+							DisarmTransaction()
+							oRest:setStatusCode(400)
+							oJson['code']        := "400"
+							oJson['errorId']  := TicketID
+							oJson['error']    := 'Erro no reclock do registro para alteracao'
+							oJson['solution'] := 'Json Esta em branco'
+							//Define o retorno
+							oRest:setHeaderResponse(jHeaders)
+							oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+							Return(lRet)
+						EndIf
+						(cAliasWS)->(DBSkip())
+					EndDo
+				End Transaction
+			EndIf
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} Put Users
+Alteração de User
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@PUT(endpoint="/AlteraUsers",description="Serviço REST para alterar pass de Users ")
+User Function AlteraUsers
+	Local lRet     := .T.
+	Local oJson    := JsonObject():New()
+	Local oObj1
+	Local JParam   := oRest:getQueryRequest()
+	Local cUser := IIf(Empty(JParam[ 'user' ]), "", JParam[ 'user' ])
+	Local cJSon       := oRest:getBodyRequest() as character
+	Local jHeaders
+	Local cHeader  := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS := "Z3F"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	If Empty(cJSon)
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'Erro em json enviado'
+		oJson['solution'] := 'Avalie o json enviado, esta vazio'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		//Se o TicketID estiver vazio
+		If Empty(cUser)
+			//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['error']    := 'User vazio'
+			oJson['solution'] := 'Informe o User'
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			DbSelectArea(cAliasWS)
+			(cAliasWS)->(DbSetOrder(1))
+
+			//Se nao encontrar o registro
+			If !(cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + cUser))
+				//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+				oRest:setStatusCode(400)
+				oJson['code']        := "400"
+				oJson['errorId']  := cUser
+				oJson['error']    := 'User nao encontrado'
+				oJson['solution'] := 'Verifique se o User existe no cadastro da tabela ' + cAliasWS
+				//Define o retorno
+				oRest:setHeaderResponse(jHeaders)
+				oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+				Return(lRet)
+			Else
+				//Deserializa a string JSON
+				FWJsonDeserialize(cJson, @oObj1)
+				Begin Transaction
+					While !(cAliasWS)->(Eof()) .And. (cAliasWS)->Z3F_ID == cUser
+						If RecLock(cAliasWS, .F.) //.T. Incluir / .F. Alterar
+							(cAliasWS)->Z3F_FILIAL := oObj1:branch
+							(cAliasWS)->Z3F_PHOTO  := oObj1:photo
+							(cAliasWS)->Z3F_NAME   := oObj1:name
+							(cAliasWS)->Z3F_EMAIL  := oObj1:email
+							(cAliasWS)->Z3F_REGDAT := CtoD(oObj1:registerDate)
+							(cAliasWS)->Z3F_TYPE   := oObj1:userType
+							(cAliasWS)->Z3F_ACCESS := oObj1:access
+							(cAliasWS)->Z3F_TAGS   := oObj1:tags
+							(cAliasWS)->Z3F_TIMEZO := oObj1:timezone
+							(cAliasWS)->Z3F_DETAIL := oObj1:details
+							(cAliasWS)->Z3F_ORGANI := oObj1:organization
+							(cAliasWS)->Z3F_OBSERV := oObj1:observations
+							(cAliasWS)->Z3F_PASS   := oObj1:pass
+							(cAliasWS)->(MsUnlock())
+							oJson['user']  := cUser
+							oJson['Message']   := 'Pass do user alterado com Sucesso'
+						Else
+							DisarmTransaction()
+							oRest:setStatusCode(400)
+							oJson['code']        := "400"
+							oJson['errorId']  := TicketID
+							oJson['error']    := 'Erro no reclock do registro para alteracao'
+							oJson['solution'] := 'Json Esta em branco'
+							//Define o retorno
+							oRest:setHeaderResponse(jHeaders)
+							oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+							Return(lRet)
+						EndIf
+						(cAliasWS)->(DBSkip())
+					EndDo
+				End Transaction
+			EndIf
+		EndIf
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET ListaProduct
+Retorna Produtos 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaProduct",description="Serviço REST para retornar lista de produtos ")
+User Function ListaProduct
+	Local lRet             := .T.
+	Local oJson            := JsonObject():New()
+	Local oJsonSB1         := JsonObject():New()
+	Local jHeaders
+	Local cHeader          := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS         := GetNextAlias()
+	Local JParam           := oRest:getQueryRequest()
+	Local cFilter        := IIf(Empty(JParam[ 'filter' ]), "", JParam[ 'filter' ])
+	Local nPage         := IIf(!Empty(JParam['page'    ]), Val(JParam['page'    ]), 1)
+	Local nPageSize     := IIf(!Empty(JParam['pageSize']), Val(JParam['pageSize']), 10)
+	Local nStart         := (nPage - 1) * nPageSize
+	Local nRecord         := 0
+	Local nX            := 0
+	Local aProduct        := {}
+
+	Local cWhere        := ""
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["product"] := JsonObject():New()
+	oJson["product"] := {}
+
+	If !Empty(cFilter)
+		cWhere :=  "%(Upper(SB1.B1_COD) LIKE '%"+ Upper(cFilter) +"%' OR Upper(SB1.B1_DESC) LIKE '%"+ Upper(cFilter) +"%')%"
+	ELSE
+		cWhere :=  "%1=1%"
+	EndIf
+
+	BeginSql alias cAliasWS
+    SELECT
+        SB1.B1_FILIAL,
+        SB1.B1_COD,
+        SB1.B1_DESC
+    FROM
+        %table:SB1% SB1
+    WHERE
+        SB1.B1_FILIAL= %xfilial:SB1% AND
+       %exp:cWhere% AND
+        SB1.%notDel% 
+        ORDER BY %Order:SB1%
+	EndSql
+
+
+	If (cAliasWS)->(!EOF())
+		(cAliasWS)->(DBGOTOP())
+		COUNT TO nRecord
+
+		(cAliasWS)->(DBGOTOP())
+
+		If nStart > 0
+			(cAliasWS)->(DbSkip(nStart))
+		EndIf
+
+		For nX := 1 To nPageSize
+			If (cAliasWS)->(EOF())
+				Exit
+			EndIf
+
+			oJsonSB1 := JsonObject():New()
+			oJsonSB1["branch"       ]:= LTrim(RTrim((cAliasWS)->B1_FILIAL ))
+			oJsonSB1["Codigo"       ]:= LTrim(RTrim((cAliasWS)->B1_COD    ))
+			oJsonSB1["Descricao"    ]:= LTrim(RTrim((cAliasWS)->B1_DESC   ))
+			AAdd(aProduct, oJsonSB1)
+
+			(cAliasWS)->(DbSkip())
+		Next nX
+
+		oJson["product"] := aProduct
+		oJson["paginaAtual"] := nPage
+		oJson["tamanhoPagina"] := nPageSize
+		oJson["totalRegistros"] := nRecord
+		oJson["temMaisPaginas"] := IIf((nPage * nPageSize) < nRecord, .T., .F.)
+	Else
+		oJson["product"] := {}
+		oJson["mensagem"] := "Nenhum produto encontrado"
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET Product
+Retorna Produtos 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param product, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/Product",description="Serviço REST para retornar produtos")
+User Function Product
+	Local lRet             := .T.
+	Local oJson            := JsonObject():New()
+	Local oJsonSB1         := JsonObject():New()
+	Local JParam           := oRest:getQueryRequest()
+	Local cProduct         := IIf(Empty(JParam[ 'product' ]), "", JParam[ 'product' ])
+	Local jHeaders
+	Local cHeader          := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS         := "SB1"
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["product"] := JsonObject():New()
+	oJson["product"] := {}
+
+	DbSelectArea(cAliasWS)
+	(cAliasWS)->(DbSetOrder(1))
+	(cAliasWS)->(DbGoTop())
+
+	//Se o Product estiverem vazios
+	If Empty(cProduct)
+		//SetRestFault(500, 'Falha ao consultar o registro') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+		oRest:setStatusCode(400)
+		oJson['code']        := "400"
+		oJson['error']    := 'User vazio'
+		oJson['solution'] := 'Informe o Produto'
+		//Define o retorno
+		oRest:setHeaderResponse(jHeaders)
+		oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+		Return(lRet)
+	Else
+		DbSelectArea(cAliasWS)
+		(cAliasWS)->(DbSetOrder(1))
+
+		//Se nao encontrar o registro
+		If ! (cAliasWS)->(MsSeek(FWxFilial(cAliasWS) + cProduct ))
+			//SetRestFault(500, 'Falha ao consultar ID') //caso queira usar esse comando, você nao poderá usar outros retornos, como os abaixo
+			oRest:setStatusCode(400)
+			oJson['code']        := "400"
+			oJson['errorUser']  := cProduct
+			oJson['error']    := 'Produto nao encontrado'
+			oJson['solution'] := 'Verifique se o User existe no cadastro da tabela ' + cAliasWS
+			//Define o retorno
+			oRest:setHeaderResponse(jHeaders)
+			oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+			Return(lRet)
+		Else
+			While !(cAliasWS)->(EoF()) .And. Replace((cAliasWS)->B1_COD, ' ','') == cProduct
+				oJsonSB1 := JsonObject():New()
+				oJsonSB1["branch"       ]:= LTrim(RTrim((cAliasWS)->B1_FILIAL ))
+				oJsonSB1["Codigo"       ]:= LTrim(RTrim((cAliasWS)->B1_COD    ))
+				oJsonSB1["Descricao"    ]:= LTrim(RTrim((cAliasWS)->B1_DESC   ))
+
+				aAdd(oJson["product"], oJsonSB1)
+				(cAliasWS)->(DBSkip())
+			EndDo
+		EndIf
+	EndIF
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} GET ListaLocalidade
+Retorna localidade 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+
+	@GET(endpoint="/ListaLocalidade",description="Serviço REST para retornar lista de localidade ")
+User Function ListaLocalidade
+	Local lRet             := .T.
+	Local oJson            := JsonObject():New()
+	Local oJsonCC2         := JsonObject():New()
+	Local jHeaders
+	Local cHeader          := '{"Content-Encoding":"gzip","application/json; charset=utf-8","Vary", "Accept-Encoding"}'
+	Local cAliasWS         := GetNextAlias()
+	Local JParam           := oRest:getQueryRequest()
+	Local cFilter        := IIf(Empty(JParam[ 'filter' ]), "", JParam[ 'filter' ])
+	Local nPage         := IIf(!Empty(JParam['page'    ]), Val(JParam['page'    ]), 1)
+	Local nPageSize     := IIf(!Empty(JParam['pageSize']), Val(JParam['pageSize']), 10)
+	Local nStart         := (nPage - 1) * nPageSize
+	Local nRecord         := 0
+	Local nX            := 0
+	Local aLocality        := {}
+
+	jHeaders := JsonObject():New()
+	uRet := jHeaders:fromJson(cHeader)
+
+	oJson["locality"] := JsonObject():New()
+	oJson["locality"] := {}
+
+	If !Empty(cFilter)
+		cWhere :=  "%(Upper(CC2.CC2_MUN) LIKE '%"+ Upper(cFilter) +"%' OR Upper(CC2.CC2_CODMUN) LIKE '%"+ Upper(cFilter) +"%')%"
+	ELSE
+		cWhere :=  "%1=1%"
+	EndIf
+
+	BeginSql alias cAliasWS
+    SELECT
+        CC2.CC2_EST,
+        CC2.CC2_CODMUN,
+        CC2.CC2_MUN
+    FROM
+        %table:CC2% CC2
+    WHERE
+        CC2.CC2_FILIAL= %xfilial:CC2% AND
+       %exp:cWhere% AND
+        CC2.%notDel% 
+        ORDER BY %Order:CC2%
+	EndSql
+
+
+	If (cAliasWS)->(!EOF())
+		(cAliasWS)->(DBGOTOP())
+		COUNT TO nRecord
+
+		(cAliasWS)->(DBGOTOP())
+
+		If nStart > 0
+			(cAliasWS)->(DbSkip(nStart))
+		EndIf
+
+		For nX := 1 To nPageSize
+			If (cAliasWS)->(EOF())
+				Exit
+			EndIf
+			oJsonCC2 := JsonObject():New()
+			oJsonCC2["uf"            ]:= RTrim((cAliasWS)->CC2_EST   )
+			oJsonCC2["id"           ]:= RTrim((cAliasWS)->CC2_CODMUN)
+			oJsonCC2["name"            ]:= RTrim((cAliasWS)->CC2_MUN   )
+
+			aAdd(aLocality, oJsonCC2)
+
+			(cAliasWS)->(DbSkip())
+		Next nX
+
+		oJson["locality"] := aLocality
+		oJson["paginaAtual"] := nPage
+		oJson["tamanhoPagina"] := nPageSize
+		oJson["totalRegistros"] := nRecord
+		oJson["temMaisPaginas"] := IIf((nPage * nPageSize) < nRecord, .T., .F.)
+	Else
+		oJson["locality"] := {}
+		oJson["mensagem"] := "Nenhuma localidade encontrada"
+	EndIf
+
+	//Define o retorno
+	oRest:setHeaderResponse(jHeaders)
+	oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+Return lRet
+
+/*/{Protheus.doc} ListaItens
+Retorna Tickets para organização 
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param ArtigoID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+Static Function ListaItens(cCodCli, nOpcTik)
+	Local aRet := {}
+	Local cQuery := ""
+	Local aArea         := GetArea()
+	Local cAliasTRB     := GetNextAlias()
+
+	If Select( (cAliasTRB) ) > 0
+		(cAliasTRB)->(DbCloseArea())
+	EndIf
+	If nOpcTik == 1
+		cQuery += "SELECT Z3A_ID " + CRLF
+		cQuery += " FROM " + RetSqlName( 'Z3A' ) + " Z3A"
+		cQuery += " WHERE Z3A_FILIAL='" + xFilial( 'Z3A' ) + "'"
+		cQuery += " AND Z3A.Z3A_IDORG ='" + cCodCli + "'"
+		cQuery += " AND Z3A.D_E_L_E_T_=' '"
+
+		// Executa a consulta.
+		DbUseArea( .T., "TOPCONN", TcGenQry(,,cQuery), cAliasTRB, .T., .T. )
+		DbSelectArea((cAliasTRB))
+		(cAliasTRB)->(dbGoTop())
+
+		While !(cAliasTRB)->(Eof())
+			aAdd(aRet, (cAliasTRB)->Z3A_ID)
+			(cAliasTRB)->(DBSkip())
+		EndDo
+	ElseIf nOpcTik == 2
+		cQuery += "SELECT Z3A_ID " + CRLF
+		cQuery += " FROM " + RetSqlName( 'Z3A' ) + " Z3A"
+		cQuery += " WHERE Z3A_FILIAL='" + xFilial( 'Z3A' ) + "'"
+		cQuery += " AND Z3A.Z3A_ATRIBU ='" + cCodCli + "'"
+		cQuery += " AND Z3A.D_E_L_E_T_=' '"
+
+		// Executa a consulta.
+		DbUseArea( .T., "TOPCONN", TcGenQry(,,cQuery), cAliasTRB, .T., .T. )
+		DbSelectArea((cAliasTRB))
+		(cAliasTRB)->(dbGoTop())
+
+		While !(cAliasTRB)->(Eof())
+			aAdd(aRet, (cAliasTRB)->Z3A_ID)
+			(cAliasTRB)->(DBSkip())
+		EndDo
+	ElseIf nOpcTik == 3
+		cQuery += "SELECT Z3G_USERS" + CRLF
+		cQuery += " FROM " + RetSqlName( 'Z3G' ) + " Z3G"
+		cQuery += " WHERE Z3G_FILIAL='" + xFilial( 'Z3G' ) + "'"
+		cQuery += " AND Z3G.Z3G_GROUP ='" + cCodCli + "'"
+		cQuery += " AND Z3G.D_E_L_E_T_=' '"
+
+		// Executa a consulta.
+		DbUseArea( .T., "TOPCONN", TcGenQry(,,cQuery), cAliasTRB, .T., .T. )
+		DbSelectArea((cAliasTRB))
+		(cAliasTRB)->(dbGoTop())
+
+		While !(cAliasTRB)->(Eof())
+			aAdd(aRet, (cAliasTRB)->Z3G_USERS)
+			(cAliasTRB)->(DBSkip())
+		EndDo
+	EndIF
+	(cAliasTRB)->(DbCloseArea())
+	RestArea(aArea)
+
+Return(aRet)
+
+/*/{Protheus.doc} EnviaEmail
+Faz envio de e-mail na abertura do ticket
+@author Isaias Gravatal
+@since Jul/2025
+@version 1.0
+@param 
+@obs 
+@see 
+/*/
+Static Function EnviaEmail(cPara, cAssunto, cMensagem, aAnexos, lMostraLog, lUsaTLS, nTipoMsg)
+	Local oServer     := TMailManager():New()
+	Local oMessage     := TMailMessage():New()
+	Local cConta     := "reports@3corp.com.br" //"isaias.gravatal@gmail.com"
+	Local cSenha     := "y1jpD54D}X#Z" //"oecb bqit ckfh akei"
+	Local cSMTP     := "smtp.office365.com" //"smtp.gmail.com"
+	Local nPorta     := 587 // Porta segura com TLS
+	Local lRet         := .T.
+
+	Default cMensagem := ""
+	If nTipoMsg == 1
+		cMensagem += '<!DOCTYPE html>                                                                                         '
+		cMensagem += '<html lang="pt-BR">                                                                                     '
+		cMensagem += '<head>                                                                                                  '
+		cMensagem += '<meta charset="UTF-8">                                                                                  '
+		cMensagem += '<title>Bem-vindo à 3CORP Technology</title>                                                             '
+		cMensagem += '<style>                                                                                                 '
+		cMensagem += 'body {                                                                                                  '
+		cMensagem += 'font-family: Arial, sans-serif;                                                                         '
+		cMensagem += '    background-color: #f6f6f6;                                                                          '
+		cMensagem += '    color: #333;                                                                                          '
+		cMensagem += '    padding: 20px;                                                                                        '
+		cMensagem += '    }                                                                                                     '
+		cMensagem += '.container {                                                                                            '
+		cMensagem += 'background-color: #ffffff;                                                                            '
+		cMensagem += '    padding: 30px;                                                                                        '
+		cMensagem += '    border-radius: 8px;                                                                                   '
+		cMensagem += '    max-width: 600px;                                                                                     '
+		cMensagem += '    margin: auto;                                                                                         '
+		cMensagem += '    box-shadow: 0 0 10px rgba(0,0,0,0.1);                                                               '
+		cMensagem += '    }                                                                                                     '
+		cMensagem += 'h1 {                                                                                                    '
+		cMensagem += 'color: #005baa;                                                                                       '
+		cMensagem += '    }                                                                                                     '
+		cMensagem += 'a.button {                                                                                              '
+		cMensagem += 'display: inline-block;                                                                                  '
+		cMensagem += '    padding: 12px 20px;                                                                                   '
+		cMensagem += '    background-color: #005baa;                                                                          '
+		cMensagem += '    color: white;                                                                                         '
+		cMensagem += '    text-decoration: none;                                                                                '
+		cMensagem += '    border-radius: 5px;                                                                                   '
+		cMensagem += '    margin-top: 20px;                                                                                     '
+		cMensagem += '    }                                                                                                     '
+		cMensagem += '.footer {                                                                                               '
+		cMensagem += 'margin-top: 30px;                                                                                       '
+		cMensagem += '    font-size: 0.9em;                                                                                     '
+		cMensagem += '    color: #777;                                                                                          '
+		cMensagem += '    }                                                                                                     '
+		cMensagem += '</style>                                                                                                '
+		cMensagem += '</head>                                                                                                 '
+		cMensagem += '<body>                                                                                                  '
+		cMensagem += '<div class="container">                                                                                 '
+		cMensagem += '<h1>Bem-vindo à 3CORP Technology</h1>                                                                   '
+		cMensagem += '<p>Clique no link abaixo para criar uma senha e entrar:</p>                                             '
+		cMensagem += '<a href="https://seudominio.com/criar-senha" class="button">Crie uma senha</a>                          '
+		cMensagem += '<p class="footer">                                                                                      '
+		cMensagem += 'Se você não se cadastrou na 3CORP Technology usando esse endereço de e-mail, pode ignorar este e-mail.  '
+		cMensagem += '</p>                                                                                                    '
+		cMensagem += '<p class="footer">                                                                                      '
+		cMensagem += 'Este e-mail é um serviço da 3CORP Technology.                                                           '
+		cMensagem += '</p>                                                                                                    '
+		cMensagem += '</div>                                                                                                  '
+		cMensagem += '</body>                                                                                                 '
+		cMensagem += '</html>                                                                                                 '
+	EndIf
+
+	oMessage:Clear()
+	oMessage:cFrom := 'reports@3corp.com.br' //cConta
+	oMessage:cTo := cPara+";isaias.gravatal@iccgf.com"
+	oMessage:cSubject := cAssunto
+	oMessage:cBody := cMensagem
+	oMessage:MsgBodyType("text/html")
+
+	oServer:SetUseTLS(.T.)
+	oServer:SetUseSSL(.T.)
+	oServer:Init("", cSMTP, cConta, cSenha, 0, nPorta)
+
+	If oServer:SMTPConnect() != 0
+		ConOut("Erro ao conectar ao servidor SMTP.")
+		Return
+	EndIf
+
+	If oServer:SmtpAuth(cConta, cSenha) != 0
+		ConOut("Erro na autenticação SMTP.")
+		oServer:SMTPDisconnect()
+		Return
+	EndIf
+
+	If oMessage:Send(oServer) != 0
+		ConOut("Erro ao enviar o e-mail.")
+	Else
+		ConOut("E-mail enviado com sucesso!")
+	EndIf
+
+	oServer:SMTPDisconnect()
+
+Return lRet

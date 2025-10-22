@@ -1,0 +1,51 @@
+#Include "Protheus.ch"
+#Include "tbiconn.ch"
+#INCLUDE "TOTVS.CH"
+#INCLUDE "RESTFUL.CH"
+#INCLUDE "FWMVCDEF.CH"
+#include 'tlpp-core.th'
+#include 'tlpp-rest.th
+#Include "RwMake.ch"
+#INCLUDE "PARMTYPE.CH"
+#Include "Ap5Mail.ch"
+
+User Function CriaTab()
+
+dbSelectArea("Z3A")
+dbSelectArea("Z3C")
+dbSelectArea("Z3D")
+dbSelectArea("Z3E")
+dbSelectArea("Z3F")
+dbSelectArea("Z3G")
+dbSelectArea("Z3K")
+dbSelectArea("Z3H")
+
+
+dbSelectArea("Z3I")
+dbSelectArea("Z3J")
+dbSelectArea("Z3L")
+dbSelectArea("Z3M")
+dbSelectArea("Z3N")
+dbSelectArea("Z3O")
+dbSelectArea("Z3P")
+dbSelectArea("Z3Q")
+
+
+dbSelectArea("Z3R")
+dbSelectArea("Z3S")
+dbSelectArea("Z3U")
+dbSelectArea("Z3T")
+dbSelectArea("Z3V")
+dbSelectArea("Z3W")
+dbSelectArea("Z3X")
+dbSelectArea("Z3Y")
+
+dbSelectArea("Z3Z")
+dbSelectArea("Z31")
+dbSelectArea("Z32")
+dbSelectArea("Z33")
+dbSelectArea("ZAD")
+dbSelectArea("ZAD")
+dbSelectArea("ZAE")
+
+Return()

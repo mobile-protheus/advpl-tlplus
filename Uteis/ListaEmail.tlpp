@@ -1,0 +1,247 @@
+#Include "Protheus.ch"
+#Include "tbiconn.ch"
+#INCLUDE "TOTVS.CH"
+#INCLUDE "RESTFUL.CH"
+#INCLUDE "FWMVCDEF.CH"
+#include 'tlpp-core.th'
+#include 'tlpp-rest.th
+#Include "RwMake.ch"
+#INCLUDE "PARMTYPE.CH"
+#Include "Ap5Mail.ch"
+//#Include "mail.ch"
+
+/*/{Protheus.doc} GET ListaEmail
+Retorna respostas de e-mail para gravar nos tickets
+@author Isaias Gravatal
+@since Jun/2025
+@version 1.0
+@param TicketID, Caractere, String que será pesquisada através do MsSeek
+@obs 
+@see 
+/*/
+
+User Function ListaEmail()
+	Local cServer     	:= "imap.gmx.com" //"outlook.office365.com"
+	Local nServerPort 	:= 993
+	Local cSMTP       	:= "mail.gmx.com"
+	Local nSMTPPort   	:= 587
+	Local cUser       	:= "reports.3corp@gmx.com" //Usuário com @gmail.com
+//	Local cToken      	:= getAcssTkn()
+	Local cPass       	:= "LFX@238457"//cToken//"y1jpD54D}X#Z"
+	Local oSrv        	:= TMailMng():New( 1, 6, 6)   //IMAP
+// 	Local oSrv        	:= TMailMng():New( 0, 6, 6 )  //POP
+	Local oMsg        	:= TMailMessage():New()
+	Local nTimeout    	:= 60
+	Local nMessages   	:= 0
+	Local nCountMail  	:= 0
+	Local nX           	:= 0
+	Local cAliasWSC     := "Z3C"
+	Local cMailTo     	:= ""
+	Local cBody		  	:= ""
+	Local cTicketID	  	:= ""
+	Local cFilTicket  	:= ""
+	Local cID 			:= ""
+	Local cStatus		:= ""
+	Local lRpcSetEnv  	:= .F.
+	Local xRet
+
+	//Se o dicionário não estiver aberto, irá preparar o ambiente
+	If Select("SX2") <= 0
+		RpcSetType(3)
+		RPCSetEnv("01", "01")
+		lRpcSetEnv := .T.
+	EndIf
+
+	oSrv:cUser := cUser
+	oSrv:cPass := cPass
+
+	oSrv:cSrvAddr := cServer
+	oSrv:nSrvPort := nServerPort
+	oSrv:nSrvTimeout := nTimeout
+
+	oSrv:cSMTPAddr := cSMTP
+	oSrv:nSMTPPort := nSMTPPort
+	oSrv:nSMTPTimeout := nTimeout
+
+	//oSrv:cOAuthToken := cToken
+
+	xRet := oSrv:Connect()
+	if xRet <> 0
+		conout( "Erro Connect oSrv: " + oSrv:GetErrorString( xRet ) )
+		return
+	endif
+
+	oSrv:GetNumMsgs( @nMessages )
+
+	if nMessages > 0
+		conout( "GetNumMsgs: " + cValToChar( nMessages ) )
+		DbSelectArea(cAliasWSC)
+		(cAliasWSC)->(dbSetOrder(3))
+		For nCountMail := 1 To nMessages
+			Begin Transaction
+
+				xRet := oMsg:Receive2( oSrv, nCountMail )
+				if xRet <> 0
+					conout( "Erro Receive oSrv: " + oSrv:GetErrorString( xRet ) )
+				else
+
+					If !(cAliasWSC)->(MsSeek( oMsg:cMessageID))
+						cBody2 := oMsg:cBody
+						cBody := Left(oMsg:cBody,  At("<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<--- N", oMsg:cBody))
+						If "Ticket #" $ cBody2 .And. cBody <> '<'
+							If Empty(cTicketID) .Or. cTicketID <> Right(oMsg:cSubject, 11)
+								cTicketID := Right(oMsg:cSubject, 11)
+								Z3A->(dbSetOrder(1))
+								Z3A->(MsSeek(cTicketID))
+								cFilTicket 	:= Z3A->Z3A_FILIAL
+								cID 		:= Z3A->Z3A_ID
+								cStatus     := Z3A->Z3A_STATUS
+							EndIf
+
+							aMailTo := StrTokArr(oMsg:cTo, ",")
+
+							For nX := 1 To Len(aMailTo)
+								cMailTo += IIf(nX==1,StrTran(SubStr(aMailTo[nX], At("<", aMailTo[nX])+1, Len(aMailTo[nX])), ">", ""),;
+									";"+StrTran(SubStr(aMailTo[nX], At("<", aMailTo[nX])+1, Len(aMailTo[nX])), ">", ""))
+							Next nX
+
+							If !Empty(cID)
+								If RecLock(cAliasWSC, .T.)
+									(cAliasWSC)->Z3C_FILIAL := cFilTicket
+									(cAliasWSC)->Z3C_ID     := GetSxeNum(cAliasWSC,"Z3C_ID")
+									(cAliasWSC)->Z3C_IDTICK := cID
+									(cAliasWSC)->Z3C_MENSAG := cBody
+									(cAliasWSC)->Z3C_DESTIN := cMailTo
+									(cAliasWSC)->Z3C_REMETE := StrTran(SubStr(oMsg:cFrom, At("<", oMsg:cFrom)+1, Len(oMsg:cFrom)), ">", "")
+									(cAliasWSC)->Z3C_DATA   := Date()
+									(cAliasWSC)->Z3C_HORA   := Time()
+									(cAliasWSC)->Z3C_IDMAIL := oMsg:cMessageID
+									(cAliasWSC)->Z3C_STATUS := Z3A->Z3A_STATUS
+
+									(cAliasWSC)->(MsUnlock())
+									ConfirmSx8()
+									oSrv:movemsg(nCountMail, "Lidas")
+								Else
+									RollbackSx8()
+									DisarmTransaction()
+									oRest:setStatusCode(400)
+									oJson['code']  	  := "400"
+									oJson['error']    := 'Erro em reclock de tabela Z3C'
+									oJson['solution'] := 'Contate o administrador do sistema'
+									//Define o retorno
+									oRest:setHeaderResponse(jHeaders)
+									oRest:SetResponse(EncodeUTF8(oJson:toJSON()))
+									Return(lRet)
+								EndIf
+							EndIf
+						EndIf
+					EndIf
+				EndIf
+			/*
+			conout( "Date:    " + oMsg:cDate )
+			conout( "From:    " + oMsg:cFrom )
+			conout( "To:      " + oMsg:cTo )
+			conout( "Subject: " + oMsg:cSubject )
+			conout( "   Body: " + oMsg:cBody )
+			*/
+			End Transaction
+
+		Next nCountMail
+	Else
+		conout( "Sem e-mails na fila de e-mails" )
+
+	endif
+
+	xRet := oSrv:Disconnect()
+	if xRet <> 0
+		conout( "Erro Disconnect oSrv: " + oSrv:GetErrorString( xRet ) )
+		return
+	endif
+
+	conout( "Disconnect Sucesso!!!" )
+
+	//Chama funcção para verificar se há tickets aberto por e-mail
+	If FindFunction("U_CriaTicketEmail")
+		U_CriaTicketEmail()
+	EndIf
+
+	If lRpcSetEnv
+		RpcClearEnv() //Encerra o ambiente, fechando as devidas conexões
+	EndIf
+return
+
+
+Static Function BodyMail()
+	Local cMensagem := ""
+	cMensagem += '<!DOCTYPE html>
+	cMensagem += '<html>'
+	cMensagem += '  <head>'
+	cMensagem += '    <style>'
+	cMensagem += '      body {'
+	cMensagem += '        margin: 0;'
+	cMensagem += '        padding: 0;'
+	cMensagem += '        font-family: Arial, sans-serif;'
+	cMensagem += '        background-color: #f2f2f2;'
+	cMensagem += '      }'
+	cMensagem += '      .container {'
+	cMensagem += '        max-width: 600px;'
+	cMensagem += '        margin: auto;'
+	cMensagem += '        background-color: #ffffff;'
+	cMensagem += '        border: 1px solid #dcdcdc;'
+	cMensagem += '        padding: 20px;'
+	cMensagem += '      }'
+	cMensagem += '      .header {'
+	cMensagem += '        background-color: #0a4d8c;'
+	cMensagem += '        color: #ffffff;'
+	cMensagem += '        text-align: center;'
+	cMensagem += '        padding: 30px 20px;'
+	cMensagem += '      }'
+	cMensagem += '      .header h1 {'
+	cMensagem += '        margin: 0;'
+	cMensagem += '        font-size: 28px;'
+	cMensagem += '      }'
+	cMensagem += '      .content {'
+	cMensagem += '        padding: 20px;'
+	cMensagem += '        color: #333333;'
+	cMensagem += '      }'
+	cMensagem += '      .content h2 {'
+	cMensagem += '        color: #0a4d8c;'
+	cMensagem += '      }'
+	cMensagem += '      .footer {'
+	cMensagem += '        text-align: center;'
+	cMensagem += '        font-size: 12px;'
+	cMensagem += '        color: #777777;'
+	cMensagem += '        padding: 20px;'
+	cMensagem += '      }'
+	cMensagem += '    </style>'
+	cMensagem += '  </head>'
+	cMensagem += '  <body>'
+	cMensagem += '     <p style="text-align:center;"><<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<---------------------------------------- Não escreva Abaixo dessa linha ---------------------------------------->>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>></p>'
+	cMensagem += '     <div class="container">'
+	cMensagem += ''
+	cMensagem += '      <div class="header">'
+	cMensagem += '        <h1>Bem-vindo à 3Corp!</h1>'
+	cMensagem += '      </div>'
+	cMensagem += '      <div class="content">'
+	cMensagem += '        <h2>Olá Isaias Gravatal,</h2>'
+	cMensagem += '        <p>'
+	cMensagem += '          É com grande entusiasmo que damos as boas-vindas à nossa equipe! Estamos felizes por você fazer parte da nossa jornada e acreditamos que sua contribuição será fundamental para nosso crescimento.'
+	cMensagem += '        </p>'
+	cMensagem += '        <p>'
+	cMensagem += '          Acreditamos no poder da colaboração, do respeito e da inovação, e temos certeza de que juntos alcançaremos grandes resultados.'
+	cMensagem += '        </p>'
+	cMensagem += '        <p>'
+	cMensagem += '          Sinta-se à vontade para explorar, perguntar e contribuir. Estamos aqui para apoiar seu desenvolvimento e crescimento profissional.'
+	cMensagem += '        </p>'
+	cMensagem += '        <p>'
+	cMensagem += '          Desejamos muito sucesso nesta nova etapa!'
+	cMensagem += '        </p>'
+	cMensagem += '      </div>'
+	cMensagem += '      <div class="footer">'
+	cMensagem += '        &copy; 2025 3Corp. Todos os direitos reservados.'
+	cMensagem += '      </div>'
+	cMensagem += '    </div>'
+	cMensagem += '  </body>'
+	cMensagem += '</html>'
+
+Return(cMensagem)

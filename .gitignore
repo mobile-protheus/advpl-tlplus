@@ -1,0 +1,8 @@
+.vscode/*
+.code-workspace
+.DS_Store
+*.sh
+*.dmp
+*.log
+*.bin
+*.lock
